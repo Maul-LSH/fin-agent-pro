@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* Tailwind v4 uses @custom-variant for dark mode based on a class */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f1f5f9;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.recharts-active-dot circle {
+  stroke: white;
+  stroke-width: 2;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
