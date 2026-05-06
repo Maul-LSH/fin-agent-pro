@@ -1,15 +1,14 @@
-
 # fin-agent-pro
 
-AI-powered financial analysis tool with risk detection · US & China A-shares.
+AI-powered stock analysis tool with risk detection. US & China A-shares.
 
 **Live demo:** *(coming soon — deploying to Vercel + Render)*
 
 ## Features
 
-- 🗺️ Real-time market heatmap (sector attention × volatility)
+- 🗺️ Real-time market heatmap (sector attention × volatility scoring)
 - 🤖 AI-powered company analysis (Claude / GPT-4o / DeepSeek)
-- 🛡️ Financial fraud detection: Altman Z-Score, Beneish M-Score
+- 🛡️ Financial fraud detection: Altman Z-Score, Beneish M-Score, cash flow quality
 - 📊 Risk dashboard: 5-dimension health radar + red flag cards
 - 🌗 Dark / Light / System theme · 中 / EN i18n
 
@@ -20,33 +19,38 @@ AI-powered financial analysis tool with risk detection · US & China A-shares.
 - **AI:** Anthropic Claude, OpenAI, DeepSeek
 
 ## Architecture
-fin-agent-pro/
-├── backend/          # FastAPI REST API
-│   ├── api.py        # Routes
-│   └── core/         # Business logic
-│       ├── markets.py, sectors.py
-│       ├── attention.py    # Sector heatmap scoring
-│       ├── risk.py         # Fraud detection
-│       └── agent.py        # LLM orchestration
-└── frontend/         # Next.js app
-├── app/
-├── components/
-└── lib/
+
+    fin-agent-pro/
+    ├── backend/                  # FastAPI REST API
+    │   ├── api.py               # Routes
+    │   └── core/                # Business logic
+    │       ├── markets.py
+    │       ├── sectors.py
+    │       ├── attention.py     # Sector heatmap scoring
+    │       ├── risk.py          # Fraud detection models
+    │       └── agent.py         # LLM orchestration
+    │
+    └── frontend/                 # Next.js app
+        ├── app/
+        ├── components/
+        └── lib/
+
 ## Run locally
 
-**Backend:**
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn api:app --reload --port 8000
-```
+Backend:
 
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
+    cd backend
+    pip install -r requirements.txt
+    uvicorn api:app --reload --port 8000
+
+Frontend (new terminal):
+
+    cd frontend
+    npm install
+    npm run dev
+
+Visit http://localhost:3000
 
 ## License
-MIT
+
+MIT — see LICENSE file.
