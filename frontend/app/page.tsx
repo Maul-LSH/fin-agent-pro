@@ -11,6 +11,7 @@ import { AnalysisChat } from "@/components/AnalysisChat";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { CompareView } from "@/components/CompareView";
 import { DCFCalculator } from "@/components/DCFCalculator";
+import { PortfolioView } from "@/components/PortfolioView";
 import {
   apiClient,
   type MarketIndex,
@@ -277,6 +278,11 @@ export default function Home() {
           provider={provider}
           onOpenSettings={() => setSettingsOpen(true)}
         />
+
+        {/* 投资组合诊断 */}
+        <section className="space-y-4">
+          <PortfolioView />
+        </section>
 
         {/* 多公司对比 */}
         <section className="space-y-4">

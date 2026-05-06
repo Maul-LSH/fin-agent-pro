@@ -23,6 +23,7 @@ from core.data import get_company_info, get_financial_data
 from core.agent import extract_company_and_intent, generate_analysis
 from core.risk import assess_company_risk
 from core.dcf import calc_dcf, calc_sensitivity
+from core.portfolio import diagnose_portfolio
 
 
 # ─────────────────────────────────────────
@@ -320,3 +321,26 @@ def dcf_sensitivity(req: DCFRequest):
         base_discount=req.discount_rate,
         base_growth=req.growth_rate,
     )
+
+
+# ─────────────────────────────────────────
+# 投资组合诊断（不推荐买卖）
+# ─────────────────────────────────────────
+class HoldingItem(BaseModel):
+    ticker: str
+    weight: float  # 0-1 之间
+
+
+class PortfolioRequest(BaseModel):
+    holdings: list[HoldingItem]
+
+
+@app.post("/api/portfolio/diagnose")
+def portfolio_diagnose(req: PortfolioRequest):
+    """诊断用户的投资组合：加权风险、集中度、个股信号。
+    
+    NOTE: This endpoint provides diagnostic analysis only.
+    It does NOT generate buy/sell recommendations.
+    """
+    holdings = [{"ticker": h.ticker, "weight": h.weight} for h in req.holdings]
+    return diagnose_portfolio(holdings)

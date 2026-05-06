@@ -183,7 +183,61 @@ export const apiClient = {
     const { data } = await api.post("/api/dcf/sensitivity", params);
     return data;
   },
+
+  // 投资组合诊断
+  diagnosePortfolio: async (
+    holdings: { ticker: string; weight: number }[]
+  ): Promise<PortfolioDiagnosis> => {
+    const { data } = await api.post("/api/portfolio/diagnose", { holdings });
+    return data;
+  },
 };
+
+// ─────────────────────────────────────────
+// Portfolio types
+// ─────────────────────────────────────────
+export interface PortfolioHolding {
+  ticker: string;
+  weight: number; // 0-1
+  // 用户输入的可选字段（前端用，不传后端）
+  name?: string;
+  amount?: number; // 仓位金额（仅前端展示用）
+}
+
+export interface PortfolioDiagnosis {
+  weighted_risk_score: number | null;
+  weighted_risk_level: "low" | "medium" | "high" | null;
+  summary: string;
+  sector_concentration: {
+    sector: string;
+    weight: number;
+    weight_pct: number;
+    warning?: string;
+  }[];
+  geo_distribution: {
+    market: string;
+    weight: number;
+    weight_pct: number;
+  }[];
+  individual_signals: {
+    ticker: string;
+    type: "warning" | "ok";
+    title: string;
+    message: string;
+    category: string;
+  }[];
+  holdings_detail: {
+    ticker: string;
+    name: string;
+    weight: number;
+    weight_pct: number;
+    market: string;
+    sector: string;
+    risk_score: number | null;
+    risk_level: "low" | "medium" | "high" | null;
+  }[];
+  errors: string[];
+}
 
 // ─────────────────────────────────────────
 // Compare types
