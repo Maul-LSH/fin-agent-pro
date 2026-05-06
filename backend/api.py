@@ -22,6 +22,7 @@ from core.holdings import get_etf_top_holdings
 from core.data import get_company_info, get_financial_data
 from core.agent import extract_company_and_intent, generate_analysis
 from core.risk import assess_company_risk
+from core.dcf import calc_dcf, calc_sensitivity
 
 
 # ─────────────────────────────────────────
@@ -238,3 +239,84 @@ def analyze(req: AnalyzeRequest):
         "risk": risk_assessment,
         "analysis": analysis,
     }
+
+
+# ─────────────────────────────────────────
+# 多公司对比（Apple-style comparison）
+# ─────────────────────────────────────────
+class CompareRequest(BaseModel):
+    tickers: list[str]                  # ["AAPL", "MSFT", "GOOGL"]
+    period: str = "2024"
+
+
+@app.post("/api/compare")
+def compare(req: CompareRequest):
+    """
+    批量拉多家公司的财务数据 + 风险评估
+    用于多公司对比页面
+    """
+    if not req.tickers or len(req.tickers) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 tickers")
+    if len(req.tickers) > 4:
+        raise HTTPException(status_code=400, detail="Max 4 tickers for comparison")
+
+    companies = []
+    for ticker in req.tickers:
+        company_info = get_company_info(ticker) or {
+            "ticker": ticker,
+            "market": "us",
+            "name": ticker,
+        }
+        financial = get_financial_data(ticker, req.period)
+
+        try:
+            risk = assess_company_risk(ticker, company_info["market"], req.period)
+        except Exception as e:
+            risk = {
+                "overall_score": None,
+                "risk_level": None,
+                "summary": f"Risk assessment unavailable: {e}",
+                "dimension_scores": {},
+                "red_flags": [],
+            }
+
+        companies.append({
+            "company": company_info,
+            "financial": financial,
+            "risk": risk,
+        })
+
+    return {"period": req.period, "companies": companies}
+
+
+# ─────────────────────────────────────────
+# DCF 估值（Model Builder）
+# ─────────────────────────────────────────
+class DCFRequest(BaseModel):
+    ticker: str
+    discount_rate: float = 0.10           # WACC
+    growth_rate: float = 0.05             # 5 年 FCF 增速
+    terminal_growth: float = 0.025        # 终值增长率
+    forecast_years: int = 5
+
+
+@app.post("/api/dcf")
+def dcf(req: DCFRequest):
+    """单次 DCF 估值"""
+    return calc_dcf(
+        req.ticker,
+        discount_rate=req.discount_rate,
+        growth_rate=req.growth_rate,
+        terminal_growth=req.terminal_growth,
+        forecast_years=req.forecast_years,
+    )
+
+
+@app.post("/api/dcf/sensitivity")
+def dcf_sensitivity(req: DCFRequest):
+    """敏感性分析：保守 / 中性 / 激进 三档场景"""
+    return calc_sensitivity(
+        req.ticker,
+        base_discount=req.discount_rate,
+        base_growth=req.growth_rate,
+    )

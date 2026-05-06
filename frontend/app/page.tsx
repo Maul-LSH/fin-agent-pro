@@ -9,6 +9,8 @@ import { AttentionQuadrant } from "@/components/AttentionQuadrant";
 import { SectorDetail } from "@/components/SectorDetail";
 import { AnalysisChat } from "@/components/AnalysisChat";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { CompareView } from "@/components/CompareView";
+import { DCFCalculator } from "@/components/DCFCalculator";
 import {
   apiClient,
   type MarketIndex,
@@ -275,6 +277,16 @@ export default function Home() {
           provider={provider}
           onOpenSettings={() => setSettingsOpen(true)}
         />
+
+        {/* 多公司对比 */}
+        <section className="space-y-4">
+          <CompareView />
+        </section>
+
+        {/* DCF 估值计算器（Model Builder）*/}
+        <section className="space-y-4">
+          <DCFCalculator />
+        </section>
       </main>
 
       <footer className="border-t border-slate-200 dark:border-slate-800 py-6 mt-12">

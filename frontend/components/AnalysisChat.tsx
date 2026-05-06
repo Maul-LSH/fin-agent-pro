@@ -12,6 +12,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import { apiClient, type AnalyzeResponse } from "@/lib/api";
 import { RiskDashboard } from "./RiskDashboard";
+import { ExportPDFButton } from "./ExportPDFButton";
 import { useT, useApp } from "@/lib/AppContext";
 
 interface Props {
@@ -192,6 +193,18 @@ export function AnalysisChat({ apiKey, provider, onOpenSettings }: Props) {
             exit={{ opacity: 0 }}
             className="space-y-4"
           >
+            {/* PDF 导出按钮 */}
+            {result.company && (
+              <div className="flex justify-end">
+                <ExportPDFButton
+                  targetId="analysis-report"
+                  filename={`analysis-${result.company.ticker}.pdf`}
+                  label="Export PDF Report"
+                />
+              </div>
+            )}
+
+            <div id="analysis-report" className="space-y-4 bg-slate-50 dark:bg-slate-900 p-1 rounded-2xl">
             {result.company && result.intent && (
               <div className="rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-700 text-white p-6">
                 <div className="flex items-center justify-between flex-wrap gap-4">
@@ -242,6 +255,7 @@ export function AnalysisChat({ apiKey, provider, onOpenSettings }: Props) {
                 </article>
               </div>
             )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

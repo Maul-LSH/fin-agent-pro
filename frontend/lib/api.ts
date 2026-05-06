@@ -162,4 +162,85 @@ export const apiClient = {
     const { data } = await api.post("/api/analyze", params);
     return data;
   },
+
+  // 多公司对比
+  compare: async (params: {
+    tickers: string[];
+    period?: string;
+  }): Promise<CompareResponse> => {
+    const { data } = await api.post("/api/compare", params);
+    return data;
+  },
+
+  // DCF 估值
+  dcf: async (params: DCFRequest): Promise<DCFResult> => {
+    const { data } = await api.post("/api/dcf", params);
+    return data;
+  },
+
+  // 敏感性分析
+  dcfSensitivity: async (params: DCFRequest): Promise<SensitivityResult> => {
+    const { data } = await api.post("/api/dcf/sensitivity", params);
+    return data;
+  },
 };
+
+// ─────────────────────────────────────────
+// Compare types
+// ─────────────────────────────────────────
+export interface CompanySnapshot {
+  company: { ticker: string; name: string; market: string };
+  financial: Record<string, unknown>;
+  risk: RiskAssessment;
+}
+
+export interface CompareResponse {
+  period: string;
+  companies: CompanySnapshot[];
+}
+
+// ─────────────────────────────────────────
+// DCF types
+// ─────────────────────────────────────────
+export interface DCFRequest {
+  ticker: string;
+  discount_rate: number;
+  growth_rate: number;
+  terminal_growth?: number;
+  forecast_years?: number;
+}
+
+export interface DCFResult {
+  ticker: string;
+  current_fcf: number | null;
+  current_price: number | null;
+  shares_outstanding: number | null;
+  intrinsic_value_per_share: number | null;
+  upside_pct: number | null;
+  projection: { year: number; fcf: number; pv: number }[];
+  terminal_value: number | null;
+  terminal_value_pv: number | null;
+  enterprise_value: number | null;
+  assumptions: {
+    discount_rate: number;
+    growth_rate: number;
+    terminal_growth: number;
+    forecast_years: number;
+  };
+  error: string | null;
+}
+
+export interface SensitivityResult {
+  ticker: string;
+  scenarios: {
+    [key: string]: {
+      label: string;
+      discount_rate: number;
+      growth_rate: number;
+      intrinsic_value: number | null;
+      upside_pct: number | null;
+      current_price: number | null;
+      error: string | null;
+    };
+  };
+}
