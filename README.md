@@ -1,6 +1,4 @@
 
-
-```markdown
 # 📈 fin-agent-pro
 
 > **AI-Powered Financial Intelligence & Risk Detection Platform.**
