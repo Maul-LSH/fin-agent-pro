@@ -1,79 +1,126 @@
-# fin-agent-pro
 
-> AI-powered stock analysis tool with risk detection · US & China A-shares.
 
-A full-stack financial analysis platform that helps non-finance users spot company risks in 30 seconds. Bring your own LLM API key (Claude / OpenAI / DeepSeek).
+```markdown
+# 📈 fin-agent-pro
 
-## Features
+> **AI-Powered Financial Intelligence & Risk Detection Platform.**
+> Engineered with Next.js 15, FastAPI, and Multi-Agent LLMs (Claude/DeepSeek) for US & China A-Shares.
 
-- 🗺️ **Real-time market heatmap** — sector attention × volatility scoring (no social media scraping)
-- 🤖 **AI-powered company analysis** — Claude / GPT-4o / DeepSeek with retail-investor-tuned prompts
-- 🛡️ **Financial fraud detection** — Altman Z-Score, Beneish M-Score, cash-flow quality, AR anomaly
-- 📊 **Risk dashboard** — 5-dimension health radar + red-flag cards + animated gauge
-- 🆚 **Apple-style multi-company comparison** — side-by-side metrics with best-value highlights
-- 🧮 **DCF Model Builder** — discounted cash flow with three-scenario sensitivity analysis
-- 💼 **Portfolio diagnostic** — weighted risk + sector concentration + per-stock signals (no buy/sell recommendations)
-- 📄 **PDF export** — single-company reports + comparison reports + portfolio diagnostics
-- 🌗 **Dark / Light / System** theme · 中 / EN i18n
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-## Tech stack
+*Live Demo: [finagent.ai](https://your-live-demo-link.com) (Coming Soon)*
 
-- **Frontend:** Next.js 15, TypeScript, Tailwind CSS v4, Framer Motion, Recharts
-- **Backend:** FastAPI, yfinance, AkShare
-- **AI:** Anthropic Claude, OpenAI, DeepSeek
-- **PDF export:** jsPDF + html2canvas-pro
+---
 
-## Inspiration & credits
+## 🚀 Overview
 
-Prompt engineering patterns adapted from
-[Anthropic's open-source financial-services agent templates](https://github.com/anthropics/financial-services)
-— specifically the persona framing, guardrail clauses, and step-wise workflow
-structure used in the Earnings Reviewer and Market Researcher agents.
-The original templates target institutional analysts with FactSet / Daloopa /
-Capital IQ data; this project re-implements the same patterns for a
-retail-investor context using free data sources (Yahoo Finance, AkShare).
+`fin-agent-pro` is not just another stock ticker app. It is a full-stack, AI-driven financial analysis tool designed to uncover market alpha and detect financial red flags. By combining traditional quantitative models (Altman Z-Score, Beneish M-Score) with advanced LLM reasoning, it provides institutional-grade insights for retail investors and researchers.
 
-## Run locally
+![Dashboard Preview](https://via.placeholder.com/1000x500?text=Insert+Your+Stripe-like+Dark+Mode+Screenshot+Here)
 
-Backend:
+## ✨ Core Features
 
-    cd backend
-    pip install -r requirements.txt
-    uvicorn api:app --reload --port 8000
+* 🛡️ **Financial Fraud Detection:** Automated calculation of **Altman Z-Score** (Bankruptcy risk) and **Beneish M-Score** (Earnings manipulation).
+* 🗺️ **Real-time Market Heatmap:** Visualizes sector attention and volatility across US and China A-Shares.
+* 🤖 **Multi-Agent AI Insights:** Orchestrates DeepSeek (for A-Shares context) and Claude (for complex reporting) to generate readable financial summaries.
+* 📊 **Multi-Entity Comparison:** Side-by-side fundamental analysis with interactive Recharts.
+* 📄 **One-Click PDF Reports:** Instantly generate and export professional research reports.
 
-Frontend (new terminal):
+## 🏗️ Architecture
 
-    cd frontend
-    npm install
-    npm run dev
+```mermaid
+graph TD
+    subgraph Frontend [Next.js 15 App Router]
+        UI[Stripe-inspired UI & Particles]
+        Charts[Recharts / Framer Motion]
+    end
 
-Visit http://localhost:3000
+    subgraph Backend [FastAPI]
+        API[REST & WebSockets]
+        Risk[Quantitative Risk Engine]
+        LLM[Agent Orchestration]
+    end
 
-## Architecture
+    subgraph External APIs
+        YF[yfinance / US Market]
+        AK[AkShare / A-Shares]
+        Reddit[PRAW / WSB Sentiment]
+        Models[OpenAI / Claude / DeepSeek]
+    end
 
-    fin-agent-pro/
-    ├── backend/                  # FastAPI REST API
-    │   ├── api.py               # Routes
-    │   └── core/                # Business logic
-    │       ├── markets.py
-    │       ├── sectors.py
-    │       ├── attention.py     # Sector heatmap scoring
-    │       ├── risk.py          # Fraud detection models
-    │       ├── dcf.py           # DCF + sensitivity analysis
-    │       ├── portfolio.py     # Portfolio diagnosis
-    │       └── agent.py         # LLM orchestration
-    │
-    └── frontend/                 # Next.js app
-        ├── app/
-        ├── components/
-        └── lib/
+    UI <-->|JSON / Stream| API
+    API --> Risk
+    API --> LLM
+    Risk --> YF & AK
+    LLM --> Models & Reddit
+```
 
-## Disclaimer
+## 💻 Tech Stack
 
-This tool is for educational use only. All output is AI-generated commentary
-on public financial data and **does not constitute investment advice**. Stock
-investments carry risk.
+* **Frontend:** Next.js 15, React 19, TypeScript, Tailwind CSS v4, Framer Motion, Recharts.
+* **Backend:** Python 3.11+, FastAPI, Pydantic, yfinance, AkShare, PRAW.
+* **AI & NLP:** LangChain, Anthropic Claude 3.5, DeepSeek-Coder.
+* **Deployment:** Vercel (Frontend) + Render/Railway (Backend).
 
-## License
+## 🗺️ Roadmap (2024-2025)
 
-MIT — see LICENSE file.
+- [x] **Phase 1: Foundation & Quant Models**
+  - [x] Next.js + FastAPI dual-repo setup.
+  - [x] Altman & Beneish model implementation.
+  - [x] Multi-company data fetching (US & A-Shares).
+- [ ] **Phase 2: Advanced Analysis & Valuation** (WIP)
+  - [ ] **DCF Valuation Calculator:** Interactive Discounted Cash Flow modeling with adjustable WACC and terminal growth rates.
+  - [ ] **Social Sentiment Alpha:** Reddit `r/wallstreetbets` data scraping via PRAW with Domain Knowledge Chain-of-Thought (DK-CoT) filtering.
+- [ ] **Phase 3: UX & Performance**
+  - [ ] Implement Stripe-inspired interactive particle background (WebGL/Canvas).
+  - [ ] Redis caching for high-frequency ticker queries.
+  - [ ] Comprehensive test coverage (Jest + Pytest).
+
+## 🛠️ Getting Started
+
+### Prerequisites
+* Node.js 18+
+* Python 3.11+
+* Reddit API Credentials (for Sentiment Analysis)
+* OpenAI/Anthropic/DeepSeek API Keys
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/YourUsername/fin-agent-pro.git](https://github.com/YourUsername/fin-agent-pro.git)
+   cd fin-agent-pro
+   ```
+
+2. **Setup Backend (FastAPI):**
+   ```bash
+   cd backend
+   python -m venv venv
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   pip install -r requirements.txt
+   
+   # Setup environment variables
+   cp .env.example .env 
+   # Add your API keys to the .env file
+   
+   uvicorn api:app --reload --port 8000
+   ```
+
+3. **Setup Frontend (Next.js):**
+   ```bash
+   cd ../frontend
+   npm install
+   npm run dev
+   ```
+   *Navigate to `http://localhost:3000` to view the app.*
+
+## ⚖️ Disclaimer
+
+**Not Financial Advice.** This project is for educational and research purposes only. The quantitative models, AI-generated summaries, and sentiment scores do not constitute investment advice. Always conduct your own due diligence before making financial decisions.
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+```
