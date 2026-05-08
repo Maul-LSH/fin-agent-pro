@@ -113,12 +113,33 @@ graph TD
    npm run dev
    ```
    *Navigate to `http://localhost:3000` to view the app.*
+   
+## 🔒 Privacy & Data Handling
+
+This application is designed to be privacy-first:
+
+- **API keys never leave your browser.** Your LLM API key is stored only in
+  your browser's `localStorage`, scoped to this domain. It is sent directly
+  to the LLM provider (Anthropic / OpenAI / DeepSeek) when you make a request,
+  but is never transmitted to or stored on this app's backend.
+- **No user accounts, no tracking.** This app does not collect personal data,
+  use cookies for tracking, or run analytics.
+- **Portfolio data is local.** Holdings entered in the portfolio diagnostic
+  feature are stored only in your browser; nothing is sent to a server.
+- **You're in control.** Open browser DevTools → Storage → Local Storage to
+  inspect or clear all stored data at any time.
+
+For institutional-grade financial data, this app uses the SEC EDGAR public
+filings system (no authentication required, identity disclosed per SEC fair
+access policy).
 
 ## ⚖️ Disclaimer
 
 **Not Financial Advice.** This project is for educational and research purposes only. The quantitative models, AI-generated summaries, and sentiment scores do not constitute investment advice. Always conduct your own due diligence before making financial decisions.
 
+
 ## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
 ```
