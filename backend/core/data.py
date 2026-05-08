@@ -69,14 +69,73 @@ def _cn_company_info(ticker: str) -> dict:
 # 财务数据（统一入口）
 # ─────────────────────────────────────────
 def get_financial_data(ticker: str, period: str) -> dict:
-    """根据 ticker 自动判断市场，拉取对应财务数据"""
+    """根据 ticker 自动判断市场，拉取对应财务数据
+    
+    数据源优先级：
+    - 美股：SEC EDGAR (institutional-grade) → fallback 到 yfinance
+    - A 股：AkShare（SEC 不覆盖中国公司）
+    """
     market = detect_market(ticker)
     norm = normalize_ticker(ticker, market)
-    return _us_financial_data(norm, period) if market == "us" else _cn_financial_data(norm, period)
+
+    if market == "us":
+        return _us_financial_data_with_fallback(norm, period)
+    return _cn_financial_data(norm, period)
+
+
+def _us_financial_data_with_fallback(ticker: str, period: str) -> dict:
+    """
+    美股数据：先尝试 SEC EDGAR，失败时回退到 yfinance
+    
+    SEC 数据更准确权威（来自原始 10-K/10-Q），但：
+    1. 不提供市场指标（PE/PB/Beta/Market Cap）
+    2. 字段提取可能因 GAAP 概念差异失败
+    
+    所以即使 SEC 成功，也用 yfinance 补充 valuation 部分。
+    """
+    sec_data = None
+    sec_error = None
+
+    # 先尝试 SEC EDGAR
+    try:
+        from .data_sec import get_us_financial_data_sec
+        sec_data = get_us_financial_data_sec(ticker, period)
+    except Exception as e:
+        sec_error = str(e)
+        sec_data = None
+
+    # 如果 SEC 完全失败 → 用 yfinance 全量
+    if sec_data is None:
+        result = _us_financial_data(ticker, period)
+        result["data_source"] = "yfinance"
+        if sec_error:
+            result["sec_fallback_reason"] = sec_error
+        return result
+
+    # SEC 成功 → 用 yfinance 补充估值数据（PE / PB / Market Cap 等）
+    try:
+        yf_data = _us_financial_data(ticker, period)
+        if "valuation" in yf_data:
+            sec_data["valuation"] = yf_data["valuation"]
+        # 如果 SEC 缺失某张表，用 yfinance 的补
+        for section in ("income", "balance", "cashflow"):
+            if section not in sec_data and section in yf_data:
+                sec_data[section] = yf_data[section]
+        # 同上 indicators
+        if "indicators" in yf_data:
+            sec_data.setdefault("indicators", {}).update(
+                {k: v for k, v in yf_data["indicators"].items()
+                 if k not in sec_data.get("indicators", {})}
+            )
+    except Exception:
+        # 即使补充失败，SEC 主数据仍可用
+        pass
+
+    return sec_data
 
 
 def _us_financial_data(ticker: str, period: str) -> dict:
-    """美股财务数据（yfinance）"""
+    """美股财务数据（yfinance）— 作为 SEC EDGAR 的 fallback + 估值数据补充"""
     result = {"market": "us", "ticker": ticker, "period": period}
 
     try:
