@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppProvider } from "@/lib/AppContext";
+import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "fin-agent · AI Financial Analysis",
-  description: "AI-powered stock financial analysis · US & China A-shares",
+  title: "fin-agent-pro · AI Financial Risk Detection",
+  description:
+    "AI-powered risk detection for the stocks you don't have time to analyze. US equities, China A-shares, and Hong Kong stocks.",
 };
 
 export default function RootLayout({
@@ -13,9 +15,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="zh" suppressHydrationWarning>
-      <body className="antialiased bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors">
-        <AppProvider>{children}</AppProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className="antialiased">
+        <AppProvider>
+          <AppShell>{children}</AppShell>
+        </AppProvider>
       </body>
     </html>
   );
