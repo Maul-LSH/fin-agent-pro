@@ -8,7 +8,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-from .utils import retry, safe_round
+from .utils import retry, safe_round, cached_fetch
 from .sectors import US_INDUSTRY_ETFS, US_SIZE_ETFS
 
 
@@ -145,15 +145,23 @@ def get_cn_sector_attention() -> list:
 
     results = []
     try:
-        # 行业板块当日表现
-        df = retry(lambda: ak.stock_board_industry_name_em(), retries=1)
+        # 行业板块当日表现（缓存 5 分钟，与 sectors.py 共享缓存键）
+        df = cached_fetch(
+            "ak.cn.industry_name",
+            lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
+        )
         if df is None or df.empty:
             return results
 
-        # 主力净流入
-        flow_df = retry(
-            lambda: ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流"),
-            retries=1,
+        # 主力净流入（缓存 5 分钟，与 sectors.py 共享缓存键）
+        flow_df = cached_fetch(
+            "ak.cn.industry_fund_flow",
+            lambda: retry(
+                lambda: ak.stock_sector_fund_flow_rank(
+                    indicator="今日", sector_type="行业资金流"
+                ),
+                retries=1,
+            ),
         )
 
         # 取涨跌幅前 15 计算评分

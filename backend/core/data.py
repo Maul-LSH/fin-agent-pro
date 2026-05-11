@@ -15,6 +15,7 @@ from .utils import (
     find_year_column,
     detect_market,
     normalize_ticker,
+    cached_fetch,
 )
 
 
@@ -28,7 +29,11 @@ def get_company_info(ticker: str) -> dict:
     """
     market = detect_market(ticker)
     norm = normalize_ticker(ticker, market)
-    return _us_company_info(norm) if market == "us" else _cn_company_info(norm)
+    if market == "us":
+        return _us_company_info(norm)
+    if market == "hk":
+        return _hk_company_info(norm)
+    return _cn_company_info(norm)
 
 
 def _us_company_info(ticker: str) -> dict:
@@ -74,12 +79,15 @@ def get_financial_data(ticker: str, period: str) -> dict:
     数据源优先级：
     - 美股：SEC EDGAR (institutional-grade) → fallback 到 yfinance
     - A 股：AkShare（SEC 不覆盖中国公司）
+    - 港股：AkShare (stock_financial_hk_report_em)
     """
     market = detect_market(ticker)
     norm = normalize_ticker(ticker, market)
 
     if market == "us":
         return _us_financial_data_with_fallback(norm, period)
+    if market == "hk":
+        return _hk_financial_data(norm, period)
     return _cn_financial_data(norm, period)
 
 
@@ -287,3 +295,306 @@ def _cn_financial_data(ticker: str, period: str) -> dict:
         result["financial_error"] = str(e)
 
     return result
+
+
+# ─────────────────────────────────────────
+# 港股公司信息（AkShare）
+# ─────────────────────────────────────────
+def _hk_company_info(ticker: str) -> dict:
+    """
+    港股公司信息：通过 AkShare stock_hk_spot_em 验证 + 拿名称
+    ticker: 5 位数字（如 00700, 00005）
+    """
+    def _fetch():
+        # 缓存全市场港股快照（4000+ 只）
+        df = cached_fetch(
+            "ak.hk.spot",
+            lambda: ak.stock_hk_spot_em(),
+            ttl=600,  # 港股变化没那么快，10 分钟缓存
+        )
+        if df is None or df.empty:
+            return None
+        # AkShare 港股代码字段是 "代码"，名称字段 "名称"
+        matched = df[df["代码"] == ticker]
+        if matched.empty:
+            return None
+        row = matched.iloc[0]
+        return {
+            "ticker": ticker,
+            "market": "hk",
+            "name": str(row.get("名称") or ticker),
+        }
+
+    result = retry(_fetch, retries=1)
+    return result or {"ticker": ticker, "market": "hk", "name": ticker}
+
+
+# ─────────────────────────────────────────
+# 港股财务数据（AkShare）
+# ─────────────────────────────────────────
+def _hk_financial_data(ticker: str, period: str) -> dict:
+    """
+    港股财务数据，使用 AkShare:
+    - 估值/行情: stock_hk_spot_em
+    - 财报: stock_financial_hk_report_em (按报告)
+    """
+    result = {
+        "market": "hk",
+        "ticker": ticker,
+        "period": period,
+        "data_source": "akshare_hk",
+    }
+
+    # ── 行情/估值 ──
+    try:
+        df = cached_fetch(
+            "ak.hk.spot",
+            lambda: ak.stock_hk_spot_em(),
+            ttl=600,
+        )
+        if df is not None and not df.empty:
+            matched = df[df["代码"] == ticker]
+            if not matched.empty:
+                row = matched.iloc[0]
+                # 港股字段：最新价、涨跌幅、市盈率、最高/最低
+                result["valuation"] = {
+                    "PE (TTM)": safe_round(row.get("市盈率") or row.get("市盈率-动态")),
+                    "Latest Price (HKD)": safe_round(row.get("最新价")),
+                    "Change %": safe_round(row.get("涨跌幅"), 2),
+                    "52W High": safe_round(row.get("最高")),
+                    "52W Low": safe_round(row.get("最低")),
+                    "Volume": safe_round(row.get("成交量"), 0),
+                }
+    except Exception as e:
+        result["valuation_error"] = str(e)
+
+    # ── 财报数据 ──
+    # AkShare 港股财报接口返回长表（每行一个指标）：
+    # 字段: SECUCODE, SECURITY_CODE, REPORT_DATE, FISCAL_YEAR, STD_ITEM_NAME, AMOUNT, ...
+    try:
+        income_df = retry(
+            lambda: ak.stock_financial_hk_report_em(
+                stock=ticker, symbol="利润表", indicator="年度"
+            ),
+            retries=1,
+        )
+        if income_df is not None and not income_df.empty:
+            period_df = _hk_filter_period(income_df, period)
+            if period_df is not None and not period_df.empty:
+                result["income"] = _hk_extract_income(period_df)
+
+        bal_df = retry(
+            lambda: ak.stock_financial_hk_report_em(
+                stock=ticker, symbol="资产负债表", indicator="年度"
+            ),
+            retries=1,
+        )
+        if bal_df is not None and not bal_df.empty:
+            period_df = _hk_filter_period(bal_df, period)
+            if period_df is not None and not period_df.empty:
+                result["balance"] = _hk_extract_balance(period_df)
+
+        cf_df = retry(
+            lambda: ak.stock_financial_hk_report_em(
+                stock=ticker, symbol="现金流量表", indicator="年度"
+            ),
+            retries=1,
+        )
+        if cf_df is not None and not cf_df.empty:
+            period_df = _hk_filter_period(cf_df, period)
+            if period_df is not None and not period_df.empty:
+                result["cashflow"] = _hk_extract_cashflow(period_df)
+    except Exception as e:
+        result["financial_error"] = str(e)
+
+    return result
+
+
+def _hk_filter_period(df, period: str):
+    """
+    AkShare 港股财报是长表：每行一个指标 (STD_ITEM_NAME = '营业额'/'毛利'/etc, AMOUNT = 值)
+    一个公司多个会计期间，按 REPORT_DATE 过滤到目标年份。
+
+    返回该年份的所有指标行（一个 DataFrame，多行）。
+    """
+    if df is None or df.empty:
+        return None
+
+    date_col = None
+    for col in ["REPORT_DATE", "FISCAL_YEAR", "报告期"]:
+        if col in df.columns:
+            date_col = col
+            break
+
+    if date_col is None:
+        return df  # 没有日期列，返回全部
+
+    period_str = str(period)
+    try:
+        # 先尝试精确匹配年份
+        matched = df[df[date_col].astype(str).str.startswith(period_str)]
+        if not matched.empty:
+            return matched
+        # 兜底：包含年份
+        matched = df[df[date_col].astype(str).str.contains(period_str, na=False)]
+        if not matched.empty:
+            return matched
+    except Exception:
+        pass
+
+    # 兜底：取最近一期（按日期倒序后取第一组）
+    try:
+        # 找到最近的日期
+        sorted_df = df.sort_values(date_col, ascending=False)
+        latest_date = sorted_df[date_col].iloc[0]
+        return df[df[date_col] == latest_date]
+    except Exception:
+        return df
+
+
+def _hk_pick_amount(period_df, item_candidates: list):
+    """
+    在长表 DataFrame 中按 STD_ITEM_NAME 候选字段名顺序查找 AMOUNT 值
+
+    参数:
+        period_df: 已经过滤到目标年份的子表
+        item_candidates: STD_ITEM_NAME 候选列表（如 ["营业额", "营业收入", "总收益"]）
+
+    返回:
+        第一个匹配的 AMOUNT 数值（float），都找不到返回 None
+    """
+    import pandas as pd_local
+
+    if period_df is None or period_df.empty:
+        return None
+
+    if "STD_ITEM_NAME" not in period_df.columns or "AMOUNT" not in period_df.columns:
+        return None
+
+    for name in item_candidates:
+        matched = period_df[period_df["STD_ITEM_NAME"] == name]
+        if matched.empty:
+            # 也尝试模糊匹配（包含关系）
+            matched = period_df[
+                period_df["STD_ITEM_NAME"].astype(str).str.contains(name, na=False)
+            ]
+        if not matched.empty:
+            val = matched["AMOUNT"].iloc[0]
+            if val is not None:
+                try:
+                    if pd_local.isna(val):
+                        continue
+                    return float(val)
+                except (TypeError, ValueError):
+                    continue
+    return None
+
+
+def _hk_extract_income(period_df) -> dict:
+    """从港股利润表（长表）提取关键指标"""
+    out = {}
+
+    # 港股利润表常见科目（基于 AkShare STD_ITEM_NAME）
+    revenue = _hk_pick_amount(period_df, ["营业额", "营业收入", "总收益", "收益"])
+    cogs = _hk_pick_amount(period_df, ["销售成本", "经营成本", "营业成本"])
+    operating = _hk_pick_amount(period_df, ["经营溢利", "经营利润", "营业利润"])
+    pre_tax = _hk_pick_amount(period_df, ["除税前溢利", "税前利润"])
+    net = _hk_pick_amount(period_df, [
+        "本公司拥有人应占溢利",
+        "股东应占溢利",
+        "本公司股东应占溢利",
+        "净利润",
+        "纯利",
+    ])
+    eps = _hk_pick_amount(period_df, ["基本每股盈利", "每股盈利", "EPS"])
+
+    # 毛利 = 营业额 - 销售成本（如果两个都有）
+    gross = None
+    if revenue is not None and cogs is not None:
+        gross = revenue - cogs
+
+    if revenue is not None:
+        out["营业收入(亿港元)"] = safe_round(revenue / 1e8, 2)
+    if gross is not None:
+        out["毛利(亿港元)"] = safe_round(gross / 1e8, 2)
+    if operating is not None:
+        out["经营利润(亿港元)"] = safe_round(operating / 1e8, 2)
+    if pre_tax is not None:
+        out["税前利润(亿港元)"] = safe_round(pre_tax / 1e8, 2)
+    if net is not None:
+        out["净利润(亿港元)"] = safe_round(net / 1e8, 2)
+    if eps is not None:
+        out["EPS(港元)"] = safe_round(eps, 2)
+
+    if revenue and revenue > 0:
+        if gross is not None:
+            out["毛利率(%)"] = safe_round(gross / revenue * 100, 2)
+        if net is not None:
+            out["净利率(%)"] = safe_round(net / revenue * 100, 2)
+
+    return out
+
+
+def _hk_extract_balance(period_df) -> dict:
+    """从港股资产负债表（长表）提取关键指标"""
+    out = {}
+
+    total_assets = _hk_pick_amount(period_df, ["资产总计", "资产总额", "总资产"])
+    total_liab = _hk_pick_amount(period_df, ["负债总计", "负债总额", "总负债"])
+    equity = _hk_pick_amount(period_df, [
+        "本公司拥有人应占权益",
+        "股东权益",
+        "权益总额",
+        "权益合计",
+    ])
+    cash = _hk_pick_amount(period_df, [
+        "现金及现金等价物",
+        "现金及银行结余",
+        "现金及等同现金项目",
+        "现金",
+    ])
+
+    if total_assets is not None:
+        out["总资产(亿港元)"] = safe_round(total_assets / 1e8, 2)
+    if total_liab is not None:
+        out["总负债(亿港元)"] = safe_round(total_liab / 1e8, 2)
+    if equity is not None:
+        out["股东权益(亿港元)"] = safe_round(equity / 1e8, 2)
+    if cash is not None:
+        out["现金及等价物(亿港元)"] = safe_round(cash / 1e8, 2)
+
+    if total_assets and total_liab:
+        out["资产负债率(%)"] = safe_round(total_liab / total_assets * 100, 2)
+
+    return out
+
+
+def _hk_extract_cashflow(period_df) -> dict:
+    """从港股现金流量表（长表）提取关键指标"""
+    out = {}
+
+    operating = _hk_pick_amount(period_df, [
+        "经营活动产生的现金流量净额",
+        "经营活动所得现金流量净额",
+        "经营业务所得现金净额",
+        "经营活动现金流",
+    ])
+    investing = _hk_pick_amount(period_df, [
+        "投资活动产生的现金流量净额",
+        "投资活动所得现金流量净额",
+        "投资活动现金流",
+    ])
+    financing = _hk_pick_amount(period_df, [
+        "筹资活动产生的现金流量净额",
+        "融资活动所得现金流量净额",
+        "融资活动现金流",
+    ])
+
+    if operating is not None:
+        out["经营现金流(亿港元)"] = safe_round(operating / 1e8, 2)
+    if investing is not None:
+        out["投资现金流(亿港元)"] = safe_round(investing / 1e8, 2)
+    if financing is not None:
+        out["筹资现金流(亿港元)"] = safe_round(financing / 1e8, 2)
+
+    return out

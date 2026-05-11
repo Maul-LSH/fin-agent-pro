@@ -10,7 +10,7 @@ core/sectors.py — 板块数据模块
 import yfinance as yf
 import akshare as ak
 
-from .utils import retry, safe_round
+from .utils import retry, safe_round, cached_fetch
 
 
 # ─────────────────────────────────────────
@@ -91,16 +91,27 @@ def get_cn_industry_sectors(top_n: int = 15) -> list:
     results = []
 
     try:
-        # 行业板块行情
-        df = retry(lambda: ak.stock_board_industry_name_em(), retries=1)
+        # 行业板块行情（缓存 5 分钟）
+        df = cached_fetch(
+            "ak.cn.industry_name",
+            lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
+        )
         if df is None or df.empty:
             return results
 
         # 按涨跌幅降序，取前 N
         df = df.sort_values("涨跌幅", ascending=False).head(top_n)
 
-        # 同时拉一份主力净流入排行
-        flow_df = retry(lambda: ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流"), retries=1)
+        # 主力净流入排行（缓存 5 分钟）
+        flow_df = cached_fetch(
+            "ak.cn.industry_fund_flow",
+            lambda: retry(
+                lambda: ak.stock_sector_fund_flow_rank(
+                    indicator="今日", sector_type="行业资金流"
+                ),
+                retries=1,
+            ),
+        )
 
         for _, row in df.iterrows():
             name = row.get("板块名称")

@@ -104,24 +104,26 @@ export interface AnalyzeResponse {
 }
 
 // ─────────────────────────────────────────
+export type MarketKey = "us" | "cn" | "hk";
+
 // API Methods
 // ─────────────────────────────────────────
 export const apiClient = {
   // 大盘指数
-  getMarkets: async (market: "us" | "cn"): Promise<MarketIndex[]> => {
+  getMarkets: async (market: MarketKey): Promise<MarketIndex[]> => {
     const { data } = await api.get(`/api/markets/${market}`);
     return data.data;
   },
 
   // 板块涨跌列表
-  getSectors: async (market: "us" | "cn", category: string): Promise<Sector[]> => {
+  getSectors: async (market: MarketKey, category: string): Promise<Sector[]> => {
     const { data } = await api.get(`/api/sectors/${market}/${category}`);
     return data.data;
   },
 
   // 板块关注度评分（用于象限图）
   getAttention: async (
-    market: "us" | "cn",
+    market: MarketKey,
     category: string = "industry"
   ): Promise<AttentionSector[]> => {
     const { data } = await api.get(
@@ -132,7 +134,7 @@ export const apiClient = {
 
   // 板块历史价格
   getSectorHistory: async (
-    market: "us" | "cn",
+    market: MarketKey,
     identifier: string,
     days: number = 90
   ): Promise<[string, number][]> => {

@@ -85,7 +85,7 @@ def extract_company_and_intent(
     抽取：公司名、ticker、市场、分析类型、时间
     """
     system = """You are an expert assistant that extracts stock analysis intents from user queries.
-Handle BOTH US stocks and China A-shares.
+Handle US stocks, China A-shares, and Hong Kong stocks.
 
 Output STRICT JSON only, no extra text, no markdown fences.
 
@@ -93,7 +93,7 @@ Schema:
 {
   "company_name": string or null,
   "ticker": string or null,
-  "market": "us" | "cn" | null,
+  "market": "us" | "cn" | "hk" | null,
   "analysis_types": array (subset of ["financial", "valuation", "risk"]),
   "period": string (year, default "2024")
 }
@@ -103,14 +103,18 @@ Examples:
 "帮我看看茅台的估值和风险" -> {"company_name": "贵州茅台", "ticker": "600519", "market": "cn", "analysis_types": ["valuation", "risk"], "period": "2024"}
 "Tesla overvalued?" -> {"company_name": "Tesla", "ticker": "TSLA", "market": "us", "analysis_types": ["valuation"], "period": "2024"}
 "宁德时代怎么样" -> {"company_name": "宁德时代", "ticker": "300750", "market": "cn", "analysis_types": ["financial", "valuation", "risk"], "period": "2024"}
-"分析拓维信息" -> {"company_name": "拓维信息", "ticker": "002261", "market": "cn", "analysis_types": ["financial", "valuation", "risk"], "period": "2024"}
+"分析腾讯" -> {"company_name": "腾讯控股", "ticker": "00700", "market": "hk", "analysis_types": ["financial", "valuation", "risk"], "period": "2024"}
+"Tencent 2023" -> {"company_name": "Tencent Holdings", "ticker": "00700", "market": "hk", "analysis_types": ["financial", "valuation", "risk"], "period": "2023"}
+"分析汇丰控股" -> {"company_name": "HSBC Holdings", "ticker": "00005", "market": "hk", "analysis_types": ["financial", "valuation", "risk"], "period": "2024"}
 "分析 600519" -> {"company_name": null, "ticker": "600519", "market": "cn", "analysis_types": ["financial", "valuation", "risk"], "period": "2024"}
 
 Rules:
 - For well-known companies (large/mid cap), you MUST give the correct ticker from your knowledge.
-- For Chinese companies, use 6-digit codes (e.g. "002261", "300750", "600519"). NEVER add suffixes like .SS or .SZ.
-- If user enters a 6-digit number directly, treat it as a Chinese A-share ticker.
-- If you genuinely don't know a small Chinese company's ticker, set ticker to null.
+- US tickers: use the standard symbol (e.g., "AAPL", "TSLA"). NEVER add exchange prefix.
+- China A-share tickers: 6-digit codes (e.g., "002261", "300750", "600519"). NEVER add suffixes.
+- Hong Kong tickers: 5-digit codes with leading zeros (e.g., "00700" for Tencent, "00005" for HSBC, "00388" for HKEX, "09988" for Alibaba HK, "01810" for Xiaomi).
+- If user enters a 6-digit number, treat as China A-share. If 4-5 digits, treat as Hong Kong.
+- If you genuinely don't know a small company's ticker, set ticker to null.
 - Default period to "2024", default analysis_types to all three.
 - Period must be a 4-digit year ≤ current year. If user asks about a future year, use 2024."""
 
@@ -183,10 +187,11 @@ def generate_analysis(
 {no_latex_rule}
 
 Use Markdown formatting. Respond in English."""
+        market_label_en = {"us": "US Stock", "cn": "China A-Share", "hk": "Hong Kong Stock"}.get(market, "Stock")
         prompt = f"""Please analyze:
 
 Company: {company_name} ({ticker})
-Market: {"US Stock" if market == "us" else "China A-Share"}
+Market: {market_label_en}
 Period: FY {period}
 
 Financial Data:
@@ -215,10 +220,11 @@ Generate a report with these sections:
 {no_latex_rule}
 
 用 Markdown 格式输出，使用中文回答。"""
+        market_label_zh = {"us": "美股", "cn": "A股", "hk": "港股"}.get(market, "股票")
         prompt = f"""请对以下公司进行财务分析：
 
 公司：{company_name}（{ticker}）
-市场：{"美股" if market == "us" else "A股"}
+市场：{market_label_zh}
 分析年度：{period}年
 
 财务数据：
