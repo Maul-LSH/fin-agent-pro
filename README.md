@@ -1,164 +1,200 @@
-# 📈 fin-agent-pro
+# fin-agent-pro
 
-> **AI-Powered Financial Risk Detection Platform.**
-> Engineered with Next.js 15, FastAPI, and LLM agents (Claude / GPT-4o / DeepSeek) for US equities & China A-Shares.
+**AI financial risk analysis for people who do not have time to read every filing.**
 
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+`fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It combines public-market data, quantitative risk models, an interactive market explorer, a two-stage DCF model, portfolio diagnostics, and LLM-generated financial analysis reports.
 
----
+It is built for **risk detection, financial understanding, and educational research**. It does not generate buy/sell recommendations.
 
-## 🚀 Overview
+![fin-agent-pro product preview](docs/assets/readme-hero.svg)
 
-`fin-agent-pro` is a full-stack financial analysis platform that helps non-finance users identify company risks in seconds. It combines academically grounded quantitative models (Altman Z-Score, Beneish M-Score) with LLM-powered analysis to translate complex filings into accessible insights — without ever giving buy/sell recommendations.
+<p align="center">
+  <a href="https://nextjs.org/"><img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?logo=next.js"></a>
+  <a href="https://fastapi.tiangolo.com/"><img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi"></a>
+  <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white"></a>
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+</p>
 
-The product is positioned for **risk detection and diagnostic analysis**, not strategy generation, with strong compliance guardrails throughout.
+## Why This Exists
 
-## ✨ Core Features
+Most retail finance tools either show raw ratios without context or ask an AI model to summarize incomplete data. `fin-agent-pro` takes a more disciplined route:
 
-* 🛡️ **Financial Fraud Detection** — Altman Z-Score (bankruptcy risk) and Beneish M-Score (earnings manipulation), with cash-flow quality and AR anomaly checks.
-* 📊 **5-Dimension Risk Dashboard** — Profitability, Solvency, Cash Flow, Revenue Quality, Valuation; rendered as an animated radial gauge with red-flag cards.
-* 🗺️ **Sector Attention Heatmap** — Volume-anomaly + volatility scoring across US (11 GICS sectors) and China A-Shares.
-* 🆚 **Apple-Style Multi-Company Comparison** — Side-by-side metrics across 2-4 tickers with best-value highlights.
-* 🧮 **DCF Model Builder** — Interactive Discounted Cash Flow valuation with adjustable WACC, growth rate, and terminal growth, plus three-scenario sensitivity analysis.
-* 💼 **Portfolio Diagnostic** — Weighted risk scoring, sector concentration warnings, and per-stock signals (diagnostic only — never returns buy/sell recommendations).
-* 📄 **PDF Export** — Single-company reports, comparison reports, and portfolio diagnostics.
-* 🌗 **Dark / Light / System Theme · 中 / EN i18n**.
+- Pull structured data from SEC EDGAR, Yahoo Finance, AkShare, and Financial Modeling Prep fallback endpoints.
+- Run explicit risk models before asking the LLM to explain the results.
+- Surface red flags such as solvency stress, earnings-manipulation risk, weak cash conversion, and valuation pressure.
+- Keep user keys and portfolio data local wherever possible.
 
-## 💻 Tech Stack
+The result is a practical analyst-style workflow: **market context -> company fundamentals -> risk model -> AI explanation -> exportable report**.
 
-* **Frontend:** Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Framer Motion · Recharts · jsPDF + html2canvas-pro.
-* **Backend:** Python 3.11+ · FastAPI · Pydantic · Domain-driven router architecture.
-* **Data Sources:** SEC EDGAR (via edgartools, institutional-grade) for US equities with automatic Yahoo Finance fallback · AkShare for China A-Shares.
-* **AI:** Direct integration with Anthropic Claude SDK · OpenAI SDK · DeepSeek (OpenAI-compatible).
-* **Deployment (planned):** Vercel (frontend) + Render (backend).
+## Product Highlights
 
-## 🏗️ Architecture
+| Area | What It Does |
+| --- | --- |
+| **AI Financial Analysis** | Ask about a company in natural language and get a structured risk read with financial context, red flags, and plain-English interpretation. |
+| **Market Explorer** | Click market indices, heatmap bubbles, or sector rankings to inspect interactive 90-day movement charts. |
+| **Risk Dashboard** | Altman Z-Score, Beneish M-Score, cash-flow quality, receivables checks, and five-dimension health scoring. |
+| **Two-Stage DCF** | 10-year DCF model with WACC build-up, normalized FCF, net debt adjustment, terminal value share, sensitivity cases, and implied-growth reverse DCF. |
+| **Portfolio Diagnostic** | Weighted portfolio risk, sector concentration, geographic exposure, and per-holding warning signals. |
+| **Multi-Company Compare** | Compare 2-4 companies side by side across financials, valuation, and risk dimensions. |
+| **PDF Export** | Export single-company reports, compare reports, and portfolio diagnostics. |
 
-```
+## Data Coverage
+
+| Market | Primary Sources | Fallback / Cache |
+| --- | --- | --- |
+| US equities | SEC EDGAR via `edgartools`, Yahoo Finance | Yahoo Finance fallback for valuation and missing statements |
+| China A-shares | AkShare / EastMoney | Financial Modeling Prep where available, plus stale local JSON cache |
+| Hong Kong stocks | AkShare | Financial Modeling Prep, AASTOCKS index fallback, plus stale local JSON cache |
+
+Caching policy:
+
+- Market quotes and sector data: **30 minutes**
+- Financial statements from FMP: **7 days**
+- Stale fallback cache: keeps the UI usable when public data providers block or fail
+
+## Architecture
+
+![fin-agent-pro architecture](docs/assets/readme-architecture.svg)
+
+```text
 fin-agent-pro/
-├── backend/                       # FastAPI REST API
-│   ├── api.py                    # App entry: CORS + register routers (47 lines)
-│   ├── routers/                  # Domain-driven routing
-│   │   ├── health.py
-│   │   ├── markets.py            # /api/markets, /api/sectors, /api/attention
-│   │   ├── analysis.py           # /api/analyze + /api/compare
-│   │   ├── valuation.py          # /api/dcf + /api/dcf/sensitivity
-│   │   └── portfolio.py          # /api/portfolio/diagnose
-│   ├── core/                     # Business logic (framework-agnostic)
-│   │   ├── data.py               # Unified data ingestion entry
-│   │   ├── data_sec.py           # SEC EDGAR ingestion via edgartools
-│   │   ├── markets.py
-│   │   ├── sectors.py
-│   │   ├── attention.py          # Sector heatmap scoring
-│   │   ├── risk.py               # Altman Z, Beneish M, cash quality
-│   │   ├── dcf.py                # DCF + sensitivity
-│   │   ├── portfolio.py          # Portfolio diagnosis
-│   │   └── agent.py              # LLM orchestration
-│   ├── requirements.txt
-│   └── .env.example
+├── backend/
+│   ├── api.py                    # FastAPI app entrypoint
+│   ├── routers/
+│   │   ├── markets.py            # market overview, sectors, attention, history
+│   │   ├── analysis.py           # AI analysis and company comparison
+│   │   ├── valuation.py          # DCF and sensitivity endpoints
+│   │   └── portfolio.py          # portfolio diagnostics
+│   └── core/
+│       ├── data.py               # unified company data ingestion
+│       ├── data_sec.py           # SEC EDGAR ingestion
+│       ├── fmp.py                # Financial Modeling Prep fallback client
+│       ├── markets.py            # index data and history
+│       ├── sectors.py            # sector rankings and history
+│       ├── attention.py          # sector attention / volatility scoring
+│       ├── risk.py               # Altman, Beneish, cash quality, red flags
+│       ├── dcf.py                # WACC + two-stage DCF engine
+│       └── agent.py              # LLM orchestration and report generation
 │
-└── frontend/                      # Next.js app
-    ├── app/                      # App Router pages
-    ├── components/               # AnalysisChat, RiskDashboard, CompareView,
-    │                             # DCFCalculator, PortfolioView, ...
-    └── lib/                      # AppContext (theme + i18n), API client
+└── frontend/
+    ├── app/
+    │   ├── analysis/             # full AI report workspace
+    │   ├── markets/[market]/     # market explorer
+    │   ├── portfolio/
+    │   ├── compare/
+    │   └── valuation/
+    ├── components/               # product UI components
+    └── lib/                      # API client, i18n, app context
 ```
 
-## 🛣️ Roadmap
+## Tech Stack
 
-- [x] **Phase 1 — Foundation & Quant Models**
-  - [x] Next.js + FastAPI full-stack setup
-  - [x] Altman Z-Score + Beneish M-Score implementations
-  - [x] US equities (yfinance) + China A-Shares (AkShare)
-- [x] **Phase 2 — Advanced Analysis**
-  - [x] Apple-style multi-company comparison
-  - [x] DCF valuation calculator with three-scenario sensitivity
-  - [x] PDF export (single + comparison + portfolio reports)
-  - [x] Portfolio diagnostic (weighted risk + sector concentration + individual signals)
-- [x] **Phase 3 — Architecture & Data Quality**
-  - [x] Domain-driven router refactor (monolithic 346-line `api.py` → 5 router modules)
-  - [x] Adapted prompt patterns from Anthropic's open-source [financial-services agent templates](https://github.com/anthropics/financial-services) (persona framing, guardrails, step-wise workflow)
-  - [x] SEC EDGAR direct ingestion via edgartools, with Yahoo Finance fallback
-- [ ] **Phase 4 — Production**
-  - [ ] Deploy to Vercel + Render
-  - [ ] Redis caching for high-frequency ticker queries
-  - [ ] Pytest coverage for quantitative risk models
+**Frontend**
 
-## 🛠️ Getting Started
+- Next.js App Router
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- Framer Motion
+- Recharts
+- jsPDF + html2canvas-pro
 
-### Prerequisites
-* Node.js 18+
-* Python 3.11+
-* An API key from one of: [Anthropic](https://console.anthropic.com), [OpenAI](https://platform.openai.com), or [DeepSeek](https://platform.deepseek.com)
+**Backend**
 
-### Installation
+- Python 3.11+
+- FastAPI
+- Pydantic
+- yfinance
+- AkShare
+- edgartools
+- Financial Modeling Prep fallback client
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Maul-LSH/fin-agent-pro.git
-   cd fin-agent-pro
-   ```
+**AI Providers**
 
-2. **Setup Backend (FastAPI):**
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   pip install -r requirements.txt
+- Anthropic Claude
+- OpenAI
+- DeepSeek through an OpenAI-compatible interface
 
-   # Optional: configure SEC EDGAR identity for institutional-grade data
-   cp .env.example .env
-   # Edit .env and set SEC_EDGAR_IDENTITY to your name + email
+## Quick Start
 
-   uvicorn api:app --reload --port 8000
-   ```
+### 1. Clone
 
-3. **Setup Frontend (Next.js):**
-   ```bash
-   cd ../frontend
-   npm install
-   npm run dev
-   ```
-   Navigate to `http://localhost:3000` to view the app.
+```bash
+git clone https://github.com/Maul-LSH/fin-agent-pro.git
+cd fin-agent-pro
+```
 
-## 🔒 Privacy & Data Handling
+### 2. Start the Backend
 
-This application is designed to be privacy-first:
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-- **API keys never leave your browser.** Your LLM API key is stored only in
-  your browser's `localStorage`, scoped to this domain. It is sent directly
-  to the LLM provider (Anthropic / OpenAI / DeepSeek) when you make a request,
-  but is never transmitted to or stored on this app's backend.
-- **No user accounts, no tracking.** This app does not collect personal data,
-  use cookies for tracking, or run analytics.
-- **Portfolio data is local.** Holdings entered in the portfolio diagnostic
-  feature are stored only in your browser; nothing is sent to a server.
-- **You're in control.** Open browser DevTools → Storage → Local Storage to
-  inspect or clear all stored data at any time.
+cp .env.example .env
+uvicorn api:app --reload --port 8000
+```
 
-For institutional-grade US filings data, this app integrates with SEC EDGAR
-(public, no authentication required; identity disclosed per SEC fair-access
-policy via the `SEC_EDGAR_IDENTITY` environment variable).
+Recommended backend environment variables:
 
-## 🙏 Inspiration & Credits
+```bash
+SEC_EDGAR_IDENTITY="Your Name your.email@example.com"
+FMP_API_KEY="your-financial-modeling-prep-key"
+CORS_ALLOW_ORIGINS=http://localhost:3000
+LOG_LEVEL=info
+```
 
-Prompt-engineering patterns adapted from
-[Anthropic's open-source financial-services agent templates](https://github.com/anthropics/financial-services)
-— specifically the persona framing, guardrail clauses, and step-wise workflow
-structure from the Earnings Reviewer agent. The original templates target
-institutional analysts with FactSet / Daloopa / Capital IQ data; this project
-re-implements the same patterns for a retail-investor context using free data
-sources (SEC EDGAR, Yahoo Finance, AkShare).
+`FMP_API_KEY` is optional, but recommended for China A-share / Hong Kong fallback coverage when AkShare or EastMoney blocks requests.
 
-## ⚖️ Disclaimer
+### 3. Start the Frontend
 
-**Not Financial Advice.** This project is for educational and research purposes
-only. The quantitative models and AI-generated summaries do not constitute
-investment advice. Stock investments carry risk. Always conduct your own due
-diligence before making financial decisions.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## 📄 License
+Open `http://localhost:3000`.
 
-Distributed under the MIT License. See `LICENSE` for more information.
+## Using the App
+
+1. Pick a market from the top navigation: US, China A, or Hong Kong.
+2. Click an index, sector bubble, or sector ranking row to inspect the interactive movement chart.
+3. Open **AI Analysis** for a full-page financial report workspace.
+4. Use **DCF Valuation** for two-stage intrinsic-value modeling.
+5. Use **Portfolio** to diagnose concentration and weighted risk.
+6. Export reports to PDF when you need a snapshot.
+
+## Privacy Model
+
+- LLM provider API keys are stored in your browser `localStorage`.
+- Portfolio holdings are stored locally in your browser.
+- No user accounts are required.
+- No tracking or analytics are included.
+- Backend `.env` values are local configuration and should not be committed.
+
+## Roadmap
+
+- [x] Apple-style homepage and market routes
+- [x] Full-page AI analysis workspace
+- [x] Interactive market detail charts
+- [x] SEC EDGAR ingestion for US equities
+- [x] FMP fallback + persistent stale cache
+- [x] Two-stage DCF with WACC build-up and implied-growth reverse DCF
+- [ ] Add automated tests for risk and DCF models
+- [ ] Add deployment docs for Vercel + Render
+- [ ] Add CI checks for backend compile and frontend lint/typecheck
+- [ ] Add richer HK and A-share sector fallback providers
+
+## Inspiration
+
+Prompt-engineering patterns were adapted from Anthropic's open-source [financial-services agent templates](https://github.com/anthropics/financial-services), especially persona framing, guardrail clauses, and step-wise report structure. This project reworks those ideas for a retail-investor-friendly product using accessible data sources.
+
+## Disclaimer
+
+This project is for educational and research purposes only. It is not financial advice, investment advice, or a recommendation to buy or sell any security. Public data sources can be delayed, incomplete, or unavailable. Always conduct your own due diligence.
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
