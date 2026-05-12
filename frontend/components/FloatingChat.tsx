@@ -11,7 +11,8 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, X } from "lucide-react";
+import { ArrowUpRight, MessageSquare, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { AnalysisChat } from "./AnalysisChat";
 import { useT } from "@/lib/AppContext";
 import { on } from "@/lib/events";
@@ -24,6 +25,7 @@ interface Props {
 
 export function FloatingChat({ onOpenSettings }: Props) {
   const t = useT();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [provider, setProvider] = useState("Claude (Anthropic)");
@@ -46,11 +48,20 @@ export function FloatingChat({ onOpenSettings }: Props) {
     return off;
   }, []);
 
+  useEffect(() => {
+    const off = on<{ query?: string }>("open-analysis-page", (detail) => {
+      const query = detail?.query ? `?q=${encodeURIComponent(detail.query)}` : "";
+      setOpen(false);
+      router.push(`/analysis${query}`);
+    });
+    return off;
+  }, [router]);
+
   return (
     <>
       <AnimatePresence>
         {!open && (
-          <motion.button
+            <motion.button
             key="bubble"
             initial={{ opacity: 0, scale: 0.8, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -88,13 +99,25 @@ export function FloatingChat({ onOpenSettings }: Props) {
                 <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">
                   {t("chatTitle")}
                 </h3>
-                <button
-                  onClick={() => setOpen(false)}
-                  aria-label={t("chatCollapse")}
-                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setOpen(false);
+                      router.push("/analysis");
+                    }}
+                    aria-label="Open full AI page"
+                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
+                  >
+                    <ArrowUpRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setOpen(false)}
+                    aria-label={t("chatCollapse")}
+                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="p-5">

@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator,
@@ -15,6 +15,7 @@ import {
   TrendingDown,
   Search,
   Info,
+  Sparkles,
 } from "lucide-react";
 import {
   BarChart,
@@ -24,9 +25,15 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Cell,
 } from "recharts";
-import { apiClient, type DCFResult, type SensitivityResult } from "@/lib/api";
+import type { ReactNode } from "react";
+import {
+  apiClient,
+  type DCFAssumptions,
+  type DCFResult,
+  type SensitivityResult,
+  type WaccBreakdown,
+} from "@/lib/api";
 
 export function DCFCalculator() {
   const [ticker, setTicker] = useState("AAPL");
@@ -34,10 +41,36 @@ export function DCFCalculator() {
   const [growthRate, setGrowthRate] = useState(5);
   const [terminalGrowth, setTerminalGrowth] = useState(2.5);
 
+  const [assumptions, setAssumptions] = useState<DCFAssumptions | null>(null);
+  const [assumptionsLoading, setAssumptionsLoading] = useState(false);
   const [result, setResult] = useState<DCFResult | null>(null);
   const [sensitivity, setSensitivity] = useState<SensitivityResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    if (!normalizedTicker) return;
+
+    const timer = window.setTimeout(async () => {
+      setAssumptionsLoading(true);
+      try {
+        const next = await apiClient.dcfAssumptions(normalizedTicker);
+        setAssumptions(next);
+        if (!next.error) {
+          setDiscountRate(Number((next.discount_rate * 100).toFixed(1)));
+          setGrowthRate(Number((next.growth_rate * 100).toFixed(1)));
+          setTerminalGrowth(Number((next.terminal_growth * 100).toFixed(1)));
+        }
+      } catch {
+        setAssumptions(null);
+      } finally {
+        setAssumptionsLoading(false);
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [ticker]);
 
   const runDCF = async () => {
     if (!ticker.trim()) return;
@@ -52,7 +85,7 @@ export function DCFCalculator() {
         discount_rate: discountRate / 100,
         growth_rate: growthRate / 100,
         terminal_growth: terminalGrowth / 100,
-        forecast_years: 5,
+        forecast_years: 10,
       };
 
       const [dcf, sens] = await Promise.all([
@@ -74,8 +107,8 @@ export function DCFCalculator() {
   };
 
   return (
-    <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-      <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+    <div className="relative z-10 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+      <div className="p-6 border-b border-slate-200 dark:border-slate-800 rounded-t-3xl">
         <div className="flex items-center gap-2 mb-1">
           <Calculator className="w-6 h-6 text-blue-600 dark:text-blue-400" />
           <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -83,7 +116,7 @@ export function DCFCalculator() {
           </h3>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Discounted Cash Flow valuation with three-scenario sensitivity analysis
+          Two-stage DCF valuation with WACC build-up, net debt adjustment, and implied growth
         </p>
       </div>
 
@@ -105,19 +138,36 @@ export function DCFCalculator() {
           </div>
         </div>
 
+        {assumptions?.error && (
+          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-sm">
+            {assumptions.error}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <SliderInput
             label="Discount Rate (WACC)"
             value={discountRate}
-            min={5}
-            max={20}
+            min={6}
+            max={15}
             step={0.5}
             unit="%"
-            hint="Higher = more conservative"
+            hint={
+              assumptionsLoading
+                ? "Calculating suggested WACC..."
+                : assumptions?.wacc_breakdown
+                  ? "Suggested by CAPM + capital structure"
+                  : "Higher = more conservative"
+            }
+            tooltip={
+              assumptions?.wacc_breakdown ? (
+                <WaccTooltip breakdown={assumptions.wacc_breakdown} />
+              ) : undefined
+            }
             onChange={setDiscountRate}
           />
           <SliderInput
-            label="FCF Growth Rate (5y)"
+            label="Stage 1 FCF Growth (5y)"
             value={growthRate}
             min={-5}
             max={25}
@@ -138,9 +188,16 @@ export function DCFCalculator() {
           />
         </div>
 
+        {assumptions?.warning && (
+          <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-sm flex gap-2">
+            <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{assumptions.warning}</span>
+          </div>
+        )}
+
         <button
           onClick={runDCF}
-          disabled={loading || !ticker.trim()}
+          disabled={loading || !ticker.trim() || Boolean(assumptions?.error)}
           className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl font-semibold flex items-center justify-center gap-2"
         >
           {loading ? (
@@ -169,10 +226,16 @@ export function DCFCalculator() {
             {/* 主要结果卡片 */}
             <ValuationResultCard result={result} />
 
-            {/* 5 年 FCF 投影柱状图 */}
+            {result.warning && (
+              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-sm">
+                {result.warning}
+              </div>
+            )}
+
+            {/* 10 年 FCF 投影柱状图 */}
             <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-5">
               <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 text-sm">
-                5-Year FCF Projection (Present Value, $B)
+                10-Year Two-Stage FCF Projection (Present Value, $B)
               </h4>
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
@@ -225,6 +288,7 @@ function SliderInput({
   step,
   unit,
   hint,
+  tooltip,
   onChange,
 }: {
   label: string;
@@ -234,6 +298,7 @@ function SliderInput({
   step: number;
   unit: string;
   hint?: string;
+  tooltip?: ReactNode;
   onChange: (v: number) => void;
 }) {
   return (
@@ -257,11 +322,57 @@ function SliderInput({
         className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
       />
       {hint && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+        <div className="relative text-xs text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1 group">
           <Info className="w-3 h-3" />
-          {hint}
-        </p>
+          <span>{hint}</span>
+          {tooltip && (
+            <div className="pointer-events-none absolute left-0 bottom-6 z-50 w-[min(20rem,calc(100vw-3rem))] opacity-0 group-hover:opacity-100 transition-opacity">
+              {tooltip}
+            </div>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+function WaccTooltip({ breakdown }: { breakdown: WaccBreakdown }) {
+  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3 shadow-xl text-slate-700 dark:text-slate-200">
+      <div className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
+        Suggested WACC: {pct(breakdown.discount_rate)}
+      </div>
+      <div className="space-y-1">
+        <TooltipRow label="Risk-free rate (10Y T)" value={pct(breakdown.risk_free_rate)} />
+        <TooltipRow label="Beta" value={breakdown.beta.toFixed(2)} />
+        <TooltipRow label="Equity risk premium" value={pct(breakdown.equity_risk_premium)} />
+      </div>
+      <div className="border-t border-slate-200 dark:border-slate-800 my-2" />
+      <div className="space-y-1">
+        <TooltipRow label="Cost of equity" value={pct(breakdown.cost_of_equity)} />
+        <TooltipRow label="Cost of debt (after tax)" value={pct(breakdown.after_tax_cost_of_debt)} />
+        <TooltipRow label="Tax rate" value={pct(breakdown.tax_rate)} />
+      </div>
+      <div className="border-t border-slate-200 dark:border-slate-800 my-2" />
+      <div className="space-y-1">
+        <TooltipRow label="Market cap weight" value={pct(breakdown.equity_weight)} />
+        <TooltipRow label="Debt weight" value={pct(breakdown.debt_weight)} />
+      </div>
+      <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+        WACC = {pct(breakdown.equity_weight)} × {pct(breakdown.cost_of_equity)} +{" "}
+        {pct(breakdown.debt_weight)} × {pct(breakdown.after_tax_cost_of_debt)}
+      </div>
+    </div>
+  );
+}
+
+function TooltipRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span>{label}</span>
+      <span className="font-mono tabular-nums">{value}</span>
     </div>
   );
 }
@@ -336,9 +447,35 @@ function ValuationResultCard({ result }: { result: DCFResult }) {
           </div>
         </div>
         <div>
+          <div className="text-xs opacity-70">Equity Value</div>
+          <div className="font-semibold tabular-nums">
+            ${result.equity_value?.toFixed(0) ?? "—"}B
+          </div>
+        </div>
+        <div>
           <div className="text-xs opacity-70">Shares Out</div>
           <div className="font-semibold tabular-nums">
             {result.shares_outstanding?.toFixed(2) ?? "—"}B
+          </div>
+        </div>
+        <div>
+          <div className="text-xs opacity-70">Net Debt</div>
+          <div className="font-semibold tabular-nums">
+            ${result.net_debt?.toFixed(1) ?? "—"}B
+          </div>
+        </div>
+        <div>
+          <div className="text-xs opacity-70">Terminal % of EV</div>
+          <div className="font-semibold tabular-nums">
+            {result.terminal_value_pct?.toFixed(1) ?? "—"}%
+          </div>
+        </div>
+        <div>
+          <div className="text-xs opacity-70">Implied Growth</div>
+          <div className="font-semibold tabular-nums">
+            {result.implied_growth_rate !== null
+              ? `${(result.implied_growth_rate * 100).toFixed(1)}%`
+              : "—"}
           </div>
         </div>
       </div>

@@ -3,8 +3,11 @@ core/utils.py — 通用工具函数
 所有数据格式化、重试、单位转换、内存缓存的共享逻辑
 """
 
+import json
+import re
 import time
 import threading
+from pathlib import Path
 import pandas as pd
 
 
@@ -17,6 +20,8 @@ import pandas as pd
 
 _cache: dict = {}
 _cache_lock = threading.Lock()
+_persistent_cache_lock = threading.Lock()
+_persistent_cache_dir = Path(__file__).resolve().parents[1] / ".cache"
 
 
 def cached_fetch(key: str, fetcher, ttl: int = 300):
@@ -47,6 +52,59 @@ def cached_fetch(key: str, fetcher, ttl: int = 300):
     if value is not None:
         with _cache_lock:
             _cache[key] = (value, now + ttl)
+
+    return value
+
+
+def _cache_path(key: str) -> Path:
+    safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", key).strip("._")
+    return _persistent_cache_dir / f"{safe_key}.json"
+
+
+def persistent_cached_fetch(key: str, fetcher, ttl: int = 300, stale_ttl: int | None = None):
+    """
+    JSON 持久缓存。
+
+    - ttl 内直接返回 fresh cache
+    - ttl 过期后优先尝试 fetcher
+    - fetcher 失败时返回 stale cache（如果 stale_ttl 未过期）
+
+    适合行情/财务这类「旧数据比空白页面更好」的外部接口。
+    """
+    now = time.time()
+    path = _cache_path(key)
+    stale_ttl = stale_ttl if stale_ttl is not None else ttl * 24
+
+    cached_payload = None
+    with _persistent_cache_lock:
+        if path.exists():
+            try:
+                cached_payload = json.loads(path.read_text())
+                if now - cached_payload.get("fetched_at", 0) <= ttl:
+                    return cached_payload.get("data")
+            except Exception:
+                cached_payload = None
+
+    try:
+        value = fetcher()
+    except Exception:
+        value = None
+
+    if value:
+        with _persistent_cache_lock:
+            _persistent_cache_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"fetched_at": now, "data": value}, ensure_ascii=False, default=str))
+        return value
+
+    if cached_payload and now - cached_payload.get("fetched_at", 0) <= stale_ttl:
+        data = cached_payload.get("data")
+        if isinstance(data, dict):
+            data.setdefault("_stale", True)
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    item.setdefault("_stale", True)
+        return data
 
     return value
 

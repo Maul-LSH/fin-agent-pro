@@ -8,8 +8,12 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-from .utils import retry, safe_round, cached_fetch
+from .utils import retry, safe_round, cached_fetch, persistent_cached_fetch
 from .sectors import US_INDUSTRY_ETFS, US_SIZE_ETFS
+
+
+QUOTE_TTL = 30 * 60
+STALE_TTL = 30 * 24 * 60 * 60
 
 
 # ─────────────────────────────────────────
@@ -141,66 +145,71 @@ def get_cn_sector_attention() -> list:
     A 股行业板块的关注度评分
     用 AkShare 拉行业板块的成交额变化 + 主力净流入作为关注度
     """
-    import akshare as ak
+    def _fetch():
+        import akshare as ak
 
-    results = []
-    try:
-        # 行业板块当日表现（缓存 5 分钟，与 sectors.py 共享缓存键）
-        df = cached_fetch(
-            "ak.cn.industry_name",
-            lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
-        )
-        if df is None or df.empty:
-            return results
+        results = []
+        try:
+            df = cached_fetch(
+                "ak.cn.industry_name",
+                lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
+                ttl=QUOTE_TTL,
+            )
+            if df is None or df.empty:
+                return None
 
-        # 主力净流入（缓存 5 分钟，与 sectors.py 共享缓存键）
-        flow_df = cached_fetch(
-            "ak.cn.industry_fund_flow",
-            lambda: retry(
-                lambda: ak.stock_sector_fund_flow_rank(
-                    indicator="今日", sector_type="行业资金流"
+            flow_df = cached_fetch(
+                "ak.cn.industry_fund_flow",
+                lambda: retry(
+                    lambda: ak.stock_sector_fund_flow_rank(
+                        indicator="今日", sector_type="行业资金流"
+                    ),
+                    retries=1,
                 ),
-                retries=1,
-            ),
-        )
+                ttl=QUOTE_TTL,
+            )
 
-        # 取涨跌幅前 15 计算评分
-        df = df.sort_values("涨跌幅", ascending=False).head(15)
+            df = df.sort_values("涨跌幅", ascending=False).head(15)
 
-        for _, row in df.iterrows():
-            name = row.get("板块名称")
-            item = {
-                "label": name,
-                "code": row.get("板块代码"),
-                "price": safe_round(row.get("最新价")),
-                "change_pct": safe_round(row.get("涨跌幅"), 2),
-                "turnover": safe_round(row.get("换手率"), 2),  # 换手率作为关注度
-                "main_inflow_yi": None,
-            }
+            for _, row in df.iterrows():
+                name = row.get("板块名称")
+                item = {
+                    "label": name,
+                    "code": row.get("板块代码"),
+                    "price": safe_round(row.get("最新价")),
+                    "change_pct": safe_round(row.get("涨跌幅"), 2),
+                    "turnover": safe_round(row.get("换手率"), 2),
+                    "main_inflow_yi": None,
+                    "source": "akshare",
+                }
 
-            # 主力净流入
-            if flow_df is not None and not flow_df.empty:
-                try:
-                    matched = flow_df[flow_df["名称"] == name]
-                    if not matched.empty:
-                        for col in ["今日主力净流入-净额", "主力净流入-净额"]:
-                            if col in matched.columns:
-                                val = matched.iloc[0][col]
-                                if val is not None:
-                                    item["main_inflow_yi"] = safe_round(float(val) / 1e8, 2)
-                                break
-                except Exception:
-                    pass
+                if flow_df is not None and not flow_df.empty:
+                    try:
+                        matched = flow_df[flow_df["名称"] == name]
+                        if not matched.empty:
+                            for col in ["今日主力净流入-净额", "主力净流入-净额"]:
+                                if col in matched.columns:
+                                    val = matched.iloc[0][col]
+                                    if val is not None:
+                                        item["main_inflow_yi"] = safe_round(float(val) / 1e8, 2)
+                                    break
+                    except Exception:
+                        pass
 
-            # A 股的「关注度」用换手率近似
-            item["attention_score"] = item["turnover"]
-            # 波动性用涨跌幅绝对值近似（简化版）
-            item["volatility_score"] = safe_round(abs(item["change_pct"]) if item["change_pct"] else 0, 2)
+                item["attention_score"] = item["turnover"]
+                item["volatility_score"] = safe_round(abs(item["change_pct"]) if item["change_pct"] else 0, 2)
 
-            results.append(item)
+                results.append(item)
 
-        _assign_quadrants(results)
-    except Exception:
-        pass
+            _assign_quadrants(results)
+        except Exception:
+            return None
 
-    return results
+        return results or None
+
+    return persistent_cached_fetch(
+        "attention.cn.industry",
+        _fetch,
+        ttl=QUOTE_TTL,
+        stale_ttl=STALE_TTL,
+    ) or []

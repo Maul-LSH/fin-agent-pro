@@ -16,7 +16,13 @@ from .utils import (
     detect_market,
     normalize_ticker,
     cached_fetch,
+    persistent_cached_fetch,
 )
+from . import fmp
+
+
+QUOTE_TTL = 30 * 60
+STALE_TTL = 30 * 24 * 60 * 60
 
 
 # ─────────────────────────────────────────
@@ -87,8 +93,50 @@ def get_financial_data(ticker: str, period: str) -> dict:
     if market == "us":
         return _us_financial_data_with_fallback(norm, period)
     if market == "hk":
-        return _hk_financial_data(norm, period)
-    return _cn_financial_data(norm, period)
+        return persistent_cached_fetch(
+            f"financial.hk.{norm}.{period}",
+            lambda: _hk_financial_data_with_fallback(norm, period),
+            ttl=QUOTE_TTL,
+            stale_ttl=STALE_TTL,
+        ) or {"market": "hk", "ticker": norm, "period": period, "error": "No cached or live financial data available"}
+    return persistent_cached_fetch(
+        f"financial.cn.{norm}.{period}",
+        lambda: _cn_financial_data_with_fallback(norm, period),
+        ttl=QUOTE_TTL,
+        stale_ttl=STALE_TTL,
+    ) or {"market": "cn", "ticker": norm, "period": period, "error": "No cached or live financial data available"}
+
+
+def _has_financial_sections(data: dict) -> bool:
+    return any(data.get(section) for section in ("valuation", "income", "balance", "cashflow", "indicators"))
+
+
+def _cn_financial_data_with_fallback(ticker: str, period: str) -> dict:
+    result = _cn_financial_data(ticker, period)
+    if _has_financial_sections(result):
+        result.setdefault("data_source", "akshare_cn")
+        return result
+
+    fmp_data = fmp.financial_data(fmp.cn_symbol(ticker), period, market="cn", ticker=ticker)
+    if fmp_data:
+        if result.get("valuation_error") or result.get("financial_error"):
+            fmp_data["akshare_fallback_reason"] = result.get("financial_error") or result.get("valuation_error")
+        return fmp_data
+    return result
+
+
+def _hk_financial_data_with_fallback(ticker: str, period: str) -> dict:
+    result = _hk_financial_data(ticker, period)
+    if _has_financial_sections(result):
+        result.setdefault("data_source", "akshare_hk")
+        return result
+
+    fmp_data = fmp.financial_data(fmp.hk_symbol(ticker), period, market="hk", ticker=ticker)
+    if fmp_data:
+        if result.get("valuation_error") or result.get("financial_error"):
+            fmp_data["akshare_fallback_reason"] = result.get("financial_error") or result.get("valuation_error")
+        return fmp_data
+    return result
 
 
 def _us_financial_data_with_fallback(ticker: str, period: str) -> dict:

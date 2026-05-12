@@ -32,7 +32,6 @@ import {
 import { Hero } from "@/components/Hero";
 import { FeatureSection } from "@/components/FeatureSection";
 import { useT } from "@/lib/AppContext";
-import { emit } from "@/lib/events";
 
 export default function HomePage() {
   const t = useT();
@@ -40,8 +39,6 @@ export default function HomePage() {
 
   const scrollToFeatures = () =>
     featuresRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-
-  const openChat = () => emit("open-floating-chat");
 
   return (
     <main className="min-h-screen">
@@ -56,8 +53,7 @@ export default function HomePage() {
           eyebrow={t("featMarketEyebrow")}
           title={t("featMarketTitle")}
           body={t("featMarketBody")}
-          ctaLabel={t("learnMore")}
-          ctaHref="/markets/us"
+          visualKind="market"
         />
 
         {/* 2. Sector Heatmap */}
@@ -70,6 +66,7 @@ export default function HomePage() {
           body={t("featHeatmapBody")}
           ctaLabel={t("learnMore")}
           ctaHref="/markets/us"
+          visualKind="heatmap"
           reversed
         />
 
@@ -82,7 +79,8 @@ export default function HomePage() {
           title={t("featAiTitle")}
           body={t("featAiBody")}
           ctaLabel={t("tryIt")}
-          ctaOnClick={openChat}
+          ctaHref="/analysis"
+          visualKind="ai"
         />
 
         {/* 4. Multi-Company Compare */}
@@ -95,6 +93,7 @@ export default function HomePage() {
           body={t("featCompareBody")}
           ctaLabel={t("learnMore")}
           ctaHref="/compare"
+          visualKind="compare"
           reversed
         />
 
@@ -108,6 +107,7 @@ export default function HomePage() {
           body={t("featPortfolioBody")}
           ctaLabel={t("learnMore")}
           ctaHref="/portfolio"
+          visualKind="portfolio"
         />
 
         {/* 6. DCF Valuation */}
@@ -120,6 +120,7 @@ export default function HomePage() {
           body={t("featDcfBody")}
           ctaLabel={t("learnMore")}
           ctaHref="/valuation"
+          visualKind="dcf"
           reversed
         />
       </div>

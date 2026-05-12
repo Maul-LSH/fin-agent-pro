@@ -8,9 +8,10 @@ interface Props {
   data: MarketIndex[];
   currencyPrefix?: string;
   loading?: boolean;
+  onSelect?: (item: MarketIndex) => void;
 }
 
-export function MarketOverview({ data, currencyPrefix = "", loading }: Props) {
+export function MarketOverview({ data, currencyPrefix = "", loading, onSelect }: Props) {
   if (loading) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -29,13 +30,15 @@ export function MarketOverview({ data, currencyPrefix = "", loading }: Props) {
       {data.map((item, i) => {
         const isUp = (item.change_pct ?? 0) >= 0;
         return (
-          <motion.div
+          <motion.button
             key={item.ticker}
+            type="button"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.06 }}
             whileHover={{ y: -4 }}
-            className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm hover:shadow-md transition-shadow"
+            onClick={() => onSelect?.(item)}
+            className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm hover:shadow-md hover:border-blue-200 dark:hover:border-blue-900 transition-all"
           >
             <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
               {item.label}
@@ -64,7 +67,7 @@ export function MarketOverview({ data, currencyPrefix = "", loading }: Props) {
                 </span>
               </div>
             )}
-          </motion.div>
+          </motion.button>
         );
       })}
     </div>

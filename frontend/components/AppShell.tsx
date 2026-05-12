@@ -5,13 +5,19 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TopNav } from "./TopNav";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { FloatingChat } from "./FloatingChat";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setSettingsOpen(true);
+    window.addEventListener("open-settings", handler);
+    return () => window.removeEventListener("open-settings", handler);
+  }, []);
 
   return (
     <>

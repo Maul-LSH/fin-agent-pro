@@ -146,6 +146,20 @@ export const apiClient = {
     return data.data;
   },
 
+  // 大盘指数历史价格
+  getMarketHistory: async (
+    market: MarketKey,
+    identifier: string,
+    days: number = 90
+  ): Promise<[string, number][]> => {
+    const { data } = await api.get(
+      `/api/market/history?market=${market}&identifier=${encodeURIComponent(
+        identifier
+      )}&days=${days}`
+    );
+    return data.data;
+  },
+
   // ETF 前 N 大持仓
   getHoldings: async (etfTicker: string, topN: number = 5): Promise<Holding[]> => {
     const { data } = await api.get(
@@ -177,6 +191,12 @@ export const apiClient = {
   // DCF 估值
   dcf: async (params: DCFRequest): Promise<DCFResult> => {
     const { data } = await api.post("/api/dcf", params);
+    return data;
+  },
+
+  // DCF 建议假设
+  dcfAssumptions: async (ticker: string): Promise<DCFAssumptions> => {
+    const { data } = await api.post("/api/dcf/assumptions", { ticker });
     return data;
   },
 
@@ -269,20 +289,60 @@ export interface DCFRequest {
 export interface DCFResult {
   ticker: string;
   current_fcf: number | null;
+  fcf_history: { year: string; fcf: number; ocf: number | null; capex: number | null }[];
   current_price: number | null;
   shares_outstanding: number | null;
   intrinsic_value_per_share: number | null;
   upside_pct: number | null;
-  projection: { year: number; fcf: number; pv: number }[];
+  projection: { year: number; stage: number; growth_rate: number; fcf: number; pv: number }[];
   terminal_value: number | null;
   terminal_value_pv: number | null;
   enterprise_value: number | null;
+  equity_value: number | null;
+  cash: number | null;
+  debt: number | null;
+  net_debt: number | null;
+  terminal_value_pct: number | null;
+  implied_growth_rate: number | null;
+  wacc_breakdown: WaccBreakdown | null;
+  warning: string | null;
   assumptions: {
     discount_rate: number;
     growth_rate: number;
     terminal_growth: number;
     forecast_years: number;
+    stage1_years: number;
   };
+  error: string | null;
+}
+
+export interface WaccBreakdown {
+  discount_rate: number;
+  raw_wacc: number;
+  risk_free_rate: number;
+  risk_free_source: string;
+  beta: number;
+  equity_risk_premium: number;
+  cost_of_equity: number;
+  debt_spread: number;
+  pre_tax_cost_of_debt: number;
+  tax_rate: number;
+  after_tax_cost_of_debt: number;
+  equity_weight: number;
+  debt_weight: number;
+  sector?: string;
+  industry?: string;
+}
+
+export interface DCFAssumptions {
+  ticker: string;
+  supported: boolean;
+  market: "us" | "cn" | "hk";
+  discount_rate: number;
+  growth_rate: number;
+  terminal_growth: number;
+  wacc_breakdown: WaccBreakdown | null;
+  warning: string | null;
   error: string | null;
 }
 

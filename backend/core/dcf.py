@@ -1,16 +1,200 @@
 """
 core/dcf.py — DCF 估值计算 + 敏感性分析
-让用户输入折现率 / 增长率 / 终值倍数，计算公司的内在价值
-
-公式：
-  PV = Σ FCF_t / (1+r)^t  +  TV / (1+r)^N
-  其中 TV = FCF_N * (1+g_terminal) / (r - g_terminal)  或  FCF_N * EV/EBITDA multiple
 """
 
 from typing import Optional
 import yfinance as yf
 
-from .utils import retry, find_year_column, safe_round
+from .utils import retry, safe_round, detect_market
+
+
+DEFAULT_RISK_FREE_RATE = 0.045
+DEFAULT_EQUITY_RISK_PREMIUM = 0.06
+DEFAULT_TAX_RATE = 0.21
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _clean_num(value) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        val = float(value)
+        if val != val:
+            return None
+        return val
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_row_value(frame, col, labels: list[str]) -> Optional[float]:
+    if frame is None or frame.empty:
+        return None
+    for label in labels:
+        if label in frame.index:
+            value = _clean_num(frame[col].get(label))
+            if value is not None:
+                return value
+    return None
+
+
+def _calc_fcf_history(cashflow, info: dict) -> list[dict]:
+    history = []
+    if cashflow is not None and not cashflow.empty:
+        for col in list(cashflow.columns)[:3]:
+            ocf = _get_row_value(
+                cashflow,
+                col,
+                ["Operating Cash Flow", "Total Cash From Operating Activities"],
+            )
+            capex = _get_row_value(
+                cashflow,
+                col,
+                ["Capital Expenditure", "Capital Expenditures"],
+            )
+            reported_fcf = _get_row_value(cashflow, col, ["Free Cash Flow"])
+            fcf = None
+            if ocf is not None and capex is not None:
+                fcf = ocf + capex if capex < 0 else ocf - capex
+            elif reported_fcf is not None:
+                fcf = reported_fcf
+            if fcf is not None:
+                year = getattr(col, "year", None) or str(col)[:4]
+                history.append({"year": str(year), "fcf": fcf, "ocf": ocf, "capex": capex})
+
+    if not history:
+        fallback = _clean_num(info.get("freeCashflow"))
+        if fallback:
+            history.append({"year": "TTM", "fcf": fallback, "ocf": None, "capex": None})
+
+    return history
+
+
+def _normalized_fcf(history: list[dict]) -> Optional[float]:
+    positive = [row["fcf"] for row in history if row.get("fcf") and row["fcf"] > 0]
+    if not positive:
+        return None
+    return sum(positive) / len(positive)
+
+
+def _get_risk_free_rate() -> tuple[float, str]:
+    try:
+        tnx = yf.Ticker("^TNX")
+        hist = retry(lambda: tnx.history(period="5d"), retries=1)
+        if hist is not None and not hist.empty:
+            raw = _clean_num(hist["Close"].dropna().iloc[-1])
+            if raw:
+                if raw > 10:
+                    return raw / 1000, "^TNX"
+                if raw > 1:
+                    return raw / 100, "^TNX"
+                return raw, "^TNX"
+    except Exception:
+        pass
+    return DEFAULT_RISK_FREE_RATE, "fallback"
+
+
+def _industry_debt_spread(sector: str | None, industry: str | None, beta: float) -> float:
+    text = f"{sector or ''} {industry or ''}".lower()
+    if any(word in text for word in ["utility", "consumer defensive", "staples"]):
+        return 0.010
+    if any(word in text for word in ["technology", "communication", "healthcare"]):
+        return 0.015
+    if any(word in text for word in ["energy", "basic materials", "industrial", "consumer cyclical"]):
+        return 0.020
+    if beta >= 1.5:
+        return 0.030
+    if beta <= 0.8:
+        return 0.012
+    return 0.018
+
+
+def _is_special_industry(sector: str | None, industry: str | None) -> Optional[str]:
+    text = f"{sector or ''} {industry or ''}".lower()
+    if any(word in text for word in ["bank", "insurance", "financial services", "capital markets"]):
+        return "Banks and financial companies are better valued with Residual Income / P/B models, not classic FCF DCF."
+    if "reit" in text:
+        return "REITs are better valued with FFO/AFFO, not classic FCF DCF."
+    return None
+
+
+def calculate_wacc(ticker: str, stock=None, info: Optional[dict] = None) -> dict:
+    stock = stock or yf.Ticker(ticker)
+    info = info or retry(lambda: stock.info, retries=2) or {}
+
+    rf, rf_source = _get_risk_free_rate()
+    beta = _clean_num(info.get("beta")) or 1.0
+    beta = _clamp(beta, 0.6, 2.2)
+    market_premium = DEFAULT_EQUITY_RISK_PREMIUM
+    cost_of_equity = rf + beta * market_premium
+
+    sector = info.get("sector")
+    industry = info.get("industry")
+    debt_spread = _industry_debt_spread(sector, industry, beta)
+    pre_tax_cost_of_debt = rf + debt_spread
+    tax_rate = _clean_num(info.get("effectiveTaxRate")) or DEFAULT_TAX_RATE
+    tax_rate = _clamp(tax_rate, 0.0, 0.35)
+    after_tax_cost_of_debt = pre_tax_cost_of_debt * (1 - tax_rate)
+
+    market_cap = _clean_num(info.get("marketCap")) or 0
+    total_debt = _clean_num(info.get("totalDebt")) or 0
+    capital = market_cap + total_debt
+    equity_weight = market_cap / capital if capital > 0 else 0.9
+    debt_weight = total_debt / capital if capital > 0 else 0.1
+    raw_wacc = equity_weight * cost_of_equity + debt_weight * after_tax_cost_of_debt
+    suggested_wacc = _clamp(raw_wacc, 0.06, 0.15)
+
+    return {
+        "discount_rate": suggested_wacc,
+        "raw_wacc": raw_wacc,
+        "risk_free_rate": rf,
+        "risk_free_source": rf_source,
+        "beta": beta,
+        "equity_risk_premium": market_premium,
+        "cost_of_equity": cost_of_equity,
+        "debt_spread": debt_spread,
+        "pre_tax_cost_of_debt": pre_tax_cost_of_debt,
+        "tax_rate": tax_rate,
+        "after_tax_cost_of_debt": after_tax_cost_of_debt,
+        "equity_weight": equity_weight,
+        "debt_weight": debt_weight,
+        "sector": sector,
+        "industry": industry,
+    }
+
+
+def suggested_dcf_assumptions(ticker: str) -> dict:
+    market = detect_market(ticker)
+    result = {
+        "ticker": ticker.upper(),
+        "supported": market == "us",
+        "market": market,
+        "discount_rate": 0.10,
+        "growth_rate": 0.05,
+        "terminal_growth": 0.025,
+        "wacc_breakdown": None,
+        "warning": None,
+        "error": None,
+    }
+    if market != "us":
+        result["error"] = "DCF is currently supported for US-listed stocks only."
+        return result
+
+    try:
+        stock = yf.Ticker(ticker)
+        info = retry(lambda: stock.info, retries=2) or {}
+        special = _is_special_industry(info.get("sector"), info.get("industry"))
+        if special:
+            result["warning"] = special
+        wacc = calculate_wacc(ticker, stock=stock, info=info)
+        result["discount_rate"] = safe_round(wacc["discount_rate"], 4)
+        result["wacc_breakdown"] = wacc
+        result["growth_rate"] = _clamp((_clean_num(info.get("earningsGrowth")) or _clean_num(info.get("revenueGrowth")) or 0.05), -0.05, 0.15)
+    except Exception as e:
+        result["warning"] = f"Using fallback assumptions because live WACC lookup failed: {e}"
+    return result
 
 
 def calc_dcf(
@@ -19,6 +203,7 @@ def calc_dcf(
     growth_rate: float = 0.05,             # 未来 5 年自由现金流年增长率
     terminal_growth: float = 0.025,        # 终值增长率（默认 2.5%，长期 GDP）
     forecast_years: int = 5,               # 预测期
+    stage1_years: int = 5,
 ) -> dict:
     """
     DCF 估值主入口
@@ -40,6 +225,7 @@ def calc_dcf(
         "assumptions": {...}
     }
     """
+    market = detect_market(ticker)
     result = {
         "ticker": ticker,
         "assumptions": {
@@ -47,8 +233,10 @@ def calc_dcf(
             "growth_rate": growth_rate,
             "terminal_growth": terminal_growth,
             "forecast_years": forecast_years,
+            "stage1_years": stage1_years,
         },
         "current_fcf": None,
+        "fcf_history": [],
         "current_price": None,
         "shares_outstanding": None,
         "intrinsic_value_per_share": None,
@@ -57,8 +245,20 @@ def calc_dcf(
         "terminal_value": None,
         "terminal_value_pv": None,
         "enterprise_value": None,
+        "cash": None,
+        "debt": None,
+        "net_debt": None,
+        "equity_value": None,
+        "terminal_value_pct": None,
+        "implied_growth_rate": None,
+        "wacc_breakdown": None,
+        "warning": None,
         "error": None,
     }
+
+    if market != "us":
+        result["error"] = "DCF is currently supported for US-listed stocks only."
+        return result
 
     # 校验：折现率必须大于终值增长率
     if discount_rate <= terminal_growth:
@@ -69,44 +269,67 @@ def calc_dcf(
         stock = yf.Ticker(ticker)
         info = retry(lambda: stock.info, retries=2) or {}
         cashflow = retry(lambda: stock.cashflow, retries=2)
+        special = _is_special_industry(info.get("sector"), info.get("industry"))
+        if special:
+            result["warning"] = special
 
-        # 拿当前自由现金流
-        current_fcf = None
-        if cashflow is not None and not cashflow.empty:
-            col = cashflow.columns[0]  # 最新一年
-            try:
-                fcf_val = cashflow[col].get("Free Cash Flow")
-                if fcf_val is not None:
-                    current_fcf = float(fcf_val)
-            except Exception:
-                pass
-
-        # fallback: 用 info 里的 freeCashflow
-        if current_fcf is None:
-            current_fcf = info.get("freeCashflow")
+        fcf_history = _calc_fcf_history(cashflow, info)
+        current_fcf = _normalized_fcf(fcf_history)
 
         if not current_fcf or current_fcf <= 0:
             result["error"] = "Cannot retrieve positive free cash flow"
             return result
 
         result["current_fcf"] = safe_round(current_fcf / 1e9, 2)
+        result["fcf_history"] = [
+            {
+                "year": row["year"],
+                "fcf": safe_round(row["fcf"] / 1e9, 2),
+                "ocf": safe_round(row["ocf"] / 1e9, 2) if row.get("ocf") is not None else None,
+                "capex": safe_round(row["capex"] / 1e9, 2) if row.get("capex") is not None else None,
+            }
+            for row in fcf_history
+        ]
+        result["wacc_breakdown"] = calculate_wacc(ticker, stock=stock, info=info)
 
         # 当前价 + 流通股本
         current_price = info.get("currentPrice") or info.get("regularMarketPrice")
         shares = info.get("sharesOutstanding")
         result["current_price"] = safe_round(current_price)
         result["shares_outstanding"] = safe_round((shares or 0) / 1e9, 2) if shares else None
+        cash = _clean_num(info.get("totalCash")) or 0
+        debt = _clean_num(info.get("totalDebt")) or 0
+        net_debt = debt - cash
+        result["cash"] = safe_round(cash / 1e9, 2)
+        result["debt"] = safe_round(debt / 1e9, 2)
+        result["net_debt"] = safe_round(net_debt / 1e9, 2)
 
-        # ── 计算未来 N 年 FCF 现值 ──
+        total_years = max(forecast_years, stage1_years + 5)
+        stage1_years = min(stage1_years, total_years)
+        result["assumptions"]["forecast_years"] = total_years
+        result["assumptions"]["stage1_years"] = stage1_years
+
+        # ── 计算未来 N 年 FCF 现值：前 5 年高增长，后 5 年线性衰减到终值增长 ──
         projection = []
         total_pv_fcf = 0.0
         last_fcf = current_fcf
 
-        for year in range(1, forecast_years + 1):
-            future_fcf = last_fcf * (1 + growth_rate)
+        for year in range(1, total_years + 1):
+            if year <= stage1_years:
+                year_growth = growth_rate
+                stage = 1
+            else:
+                fade_year = year - stage1_years
+                fade_years = total_years - stage1_years
+                step = fade_year / fade_years if fade_years else 1
+                year_growth = growth_rate + (terminal_growth - growth_rate) * step
+                stage = 2
+            future_fcf = last_fcf * (1 + year_growth)
             pv = future_fcf / ((1 + discount_rate) ** year)
             projection.append({
                 "year": year,
+                "stage": stage,
+                "growth_rate": safe_round(year_growth, 4),
                 "fcf": safe_round(future_fcf / 1e9, 2),
                 "pv": safe_round(pv / 1e9, 2),
             })
@@ -118,23 +341,36 @@ def calc_dcf(
         # ── 终值（Gordon Growth Model）──
         terminal_fcf = last_fcf * (1 + terminal_growth)
         terminal_value = terminal_fcf / (discount_rate - terminal_growth)
-        terminal_value_pv = terminal_value / ((1 + discount_rate) ** forecast_years)
+        terminal_value_pv = terminal_value / ((1 + discount_rate) ** total_years)
 
         result["terminal_value"] = safe_round(terminal_value / 1e9, 2)
         result["terminal_value_pv"] = safe_round(terminal_value_pv / 1e9, 2)
 
         # 企业价值
         enterprise_value = total_pv_fcf + terminal_value_pv
+        equity_value = enterprise_value - net_debt
         result["enterprise_value"] = safe_round(enterprise_value / 1e9, 2)
+        result["equity_value"] = safe_round(equity_value / 1e9, 2)
+        if enterprise_value > 0:
+            result["terminal_value_pct"] = safe_round(terminal_value_pv / enterprise_value * 100, 1)
 
         # 每股内在价值
         if shares and shares > 0:
-            iv_per_share = enterprise_value / shares
+            iv_per_share = equity_value / shares
             result["intrinsic_value_per_share"] = safe_round(iv_per_share, 2)
 
             if current_price and current_price > 0:
                 upside = (iv_per_share - current_price) / current_price * 100
                 result["upside_pct"] = safe_round(upside, 2)
+                result["implied_growth_rate"] = _solve_implied_growth(
+                    market_equity_value=current_price * shares,
+                    current_fcf=current_fcf,
+                    discount_rate=discount_rate,
+                    terminal_growth=terminal_growth,
+                    net_debt=net_debt,
+                    total_years=total_years,
+                    stage1_years=stage1_years,
+                )
 
     except Exception as e:
         result["error"] = str(e)
@@ -142,7 +378,60 @@ def calc_dcf(
     return result
 
 
-def calc_sensitivity(ticker: str, base_discount: float = 0.10, base_growth: float = 0.05) -> dict:
+def _project_enterprise_value(
+    current_fcf: float,
+    discount_rate: float,
+    growth_rate: float,
+    terminal_growth: float,
+    total_years: int,
+    stage1_years: int,
+) -> float:
+    total_pv = 0.0
+    last_fcf = current_fcf
+    for year in range(1, total_years + 1):
+        if year <= stage1_years:
+            year_growth = growth_rate
+        else:
+            fade_year = year - stage1_years
+            fade_years = total_years - stage1_years
+            year_growth = growth_rate + (terminal_growth - growth_rate) * (fade_year / fade_years)
+        last_fcf *= 1 + year_growth
+        total_pv += last_fcf / ((1 + discount_rate) ** year)
+    terminal_fcf = last_fcf * (1 + terminal_growth)
+    terminal_value = terminal_fcf / (discount_rate - terminal_growth)
+    return total_pv + terminal_value / ((1 + discount_rate) ** total_years)
+
+
+def _solve_implied_growth(
+    market_equity_value: float,
+    current_fcf: float,
+    discount_rate: float,
+    terminal_growth: float,
+    net_debt: float,
+    total_years: int,
+    stage1_years: int,
+) -> Optional[float]:
+    target_ev = market_equity_value + net_debt
+    low, high = -0.15, 0.30
+    for _ in range(60):
+        mid = (low + high) / 2
+        ev = _project_enterprise_value(
+            current_fcf, discount_rate, mid, terminal_growth, total_years, stage1_years
+        )
+        if ev < target_ev:
+            low = mid
+        else:
+            high = mid
+    return safe_round((low + high) / 2, 4)
+
+
+def calc_sensitivity(
+    ticker: str,
+    base_discount: float = 0.10,
+    base_growth: float = 0.05,
+    terminal_growth: float = 0.025,
+    forecast_years: int = 10,
+) -> dict:
     """
     敏感性分析：在 base 案例周围做 3 档场景
     - 保守：折现率 +2%，增长率 -2%
@@ -162,7 +451,7 @@ def calc_sensitivity(ticker: str, base_discount: float = 0.10, base_growth: floa
         },
         "optimistic": {
             "label": "Optimistic",
-            "discount_rate": max(0.05, base_discount - 0.02),
+            "discount_rate": max(0.06, base_discount - 0.02),
             "growth_rate": base_growth + 0.02,
         },
     }
@@ -173,6 +462,8 @@ def calc_sensitivity(ticker: str, base_discount: float = 0.10, base_growth: floa
             ticker,
             discount_rate=params["discount_rate"],
             growth_rate=params["growth_rate"],
+            terminal_growth=terminal_growth,
+            forecast_years=forecast_years,
         )
         out["scenarios"][key] = {
             "label": params["label"],

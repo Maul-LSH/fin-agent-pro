@@ -14,7 +14,16 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, AlertTriangle } from "lucide-react";
+import { Sparkles, AlertTriangle, X, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   apiClient,
   type MarketIndex,
@@ -27,6 +36,10 @@ import { AttentionQuadrant } from "./AttentionQuadrant";
 import { useT, type Market } from "@/lib/AppContext";
 import { emit } from "@/lib/events";
 
+type MarketDetail =
+  | { kind: "index"; item: MarketIndex }
+  | { kind: "sector"; item: Sector | AttentionSector };
+
 interface Props {
   market: Market;
 }
@@ -37,46 +50,49 @@ export function MarketSection({ market }: Props) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [attention, setAttention] = useState<AttentionSector[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<MarketDetail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
 
     if (market === "hk") {
-      apiClient
-        .getMarkets("hk")
-        .then((m) => {
+      const fetchHK = async () => {
+        setLoading(true);
+        try {
+          const m = await apiClient.getMarkets("hk");
           if (!cancelled) setIndices(m);
-        })
-        .catch(() => {
+        } catch {
           if (!cancelled) setIndices([]);
-        })
-        .finally(() => {
+        } finally {
           if (!cancelled) setLoading(false);
-        });
+        }
+      };
+      void fetchHK();
     } else {
-      Promise.all([
-        apiClient.getMarkets(market),
-        apiClient.getSectors(market, "industry"),
-        apiClient.getAttention(market, "industry"),
-      ])
-        .then(([m, s, a]) => {
+      const fetchMarket = async () => {
+        setLoading(true);
+        try {
+          const [m, s, a] = await Promise.all([
+            apiClient.getMarkets(market),
+            apiClient.getSectors(market, "industry"),
+            apiClient.getAttention(market, "industry"),
+          ]);
           if (!cancelled) {
             setIndices(m);
             setSectors(s);
             setAttention(a);
           }
-        })
-        .catch(() => {
+        } catch {
           if (!cancelled) {
             setIndices([]);
             setSectors([]);
             setAttention([]);
           }
-        })
-        .finally(() => {
+        } finally {
           if (!cancelled) setLoading(false);
-        });
+        }
+      };
+      void fetchMarket();
     }
 
     return () => {
@@ -105,6 +121,7 @@ export function MarketSection({ market }: Props) {
           data={indices}
           loading={loading}
           currencyPrefix={currencyPrefix}
+          onSelect={(item) => setDetail({ kind: "index", item })}
         />
 
         <motion.div
@@ -122,12 +139,18 @@ export function MarketSection({ market }: Props) {
             {t("hkAnalysisBody")}
           </p>
           <button
-            onClick={() => emit("open-floating-chat")}
+            onClick={() => emit("open-analysis-page")}
             className="btn-apple btn-apple-primary"
           >
             {t("hkAnalysisCTA")}
           </button>
         </motion.div>
+        <MarketDetailDrawer
+          detail={detail}
+          market={market}
+          currencyPrefix={currencyPrefix}
+          onClose={() => setDetail(null)}
+        />
       </div>
     );
   }
@@ -141,6 +164,7 @@ export function MarketSection({ market }: Props) {
         data={indices}
         loading={loading}
         currencyPrefix={currencyPrefix}
+        onSelect={(item) => setDetail({ kind: "index", item })}
       />
 
       {!showAkShareBanner && (
@@ -159,7 +183,11 @@ export function MarketSection({ market }: Props) {
               <p className="section-subtitle mt-4">{t("sectorHeatmapSubtitle")}</p>
             </motion.div>
 
-            <AttentionQuadrant data={attention} loading={loading} />
+            <AttentionQuadrant
+              data={attention}
+              loading={loading}
+              onSelectSector={(item) => setDetail({ kind: "sector", item })}
+            />
           </div>
 
           <div>
@@ -185,7 +213,11 @@ export function MarketSection({ market }: Props) {
                 ))}
               </div>
             ) : (
-              <SectorTable data={sectors} showInflow={market === "cn"} />
+              <SectorTable
+                data={sectors}
+                showInflow={market === "cn"}
+                onSelect={(item) => setDetail({ kind: "sector", item })}
+              />
             )}
           </div>
         </>
@@ -207,13 +239,19 @@ export function MarketSection({ market }: Props) {
             {t("cnFallbackBody")}
           </p>
           <button
-            onClick={() => emit("open-floating-chat")}
+            onClick={() => emit("open-analysis-page")}
             className="btn-apple btn-apple-primary"
           >
             {t("cnFallbackCTA")}
           </button>
         </motion.div>
       )}
+      <MarketDetailDrawer
+        detail={detail}
+        market={market}
+        currencyPrefix={currencyPrefix}
+        onClose={() => setDetail(null)}
+      />
     </div>
   );
 }
@@ -241,5 +279,249 @@ function DataUnavailableBanner() {
         </p>
       </div>
     </motion.div>
+  );
+}
+
+function MarketDetailDrawer({
+  detail,
+  market,
+  currencyPrefix,
+  onClose,
+}: {
+  detail: MarketDetail | null;
+  market: Market;
+  currencyPrefix: string;
+  onClose: () => void;
+}) {
+  const [history, setHistory] = useState<{ date: string; close: number }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const item = detail?.item;
+  const change = item?.change_pct ?? 0;
+  const isUp = change >= 0;
+  const title = item?.label ?? "";
+  const ticker = item && "ticker" in item && item.ticker ? item.ticker : item && "code" in item ? item.code : undefined;
+  const isSector = detail?.kind === "sector";
+  const attention = item && isSector && "attention_score" in item ? item.attention_score : undefined;
+  const volatility = item && isSector && "volatility_score" in item ? item.volatility_score : undefined;
+  const inflow = item && isSector && "main_inflow_yi" in item ? item.main_inflow_yi : undefined;
+
+  useEffect(() => {
+    if (!detail || !item) return;
+    let cancelled = false;
+    const loadHistory = async () => {
+      setHistoryLoading(true);
+      try {
+        const identifier =
+          detail.kind === "index"
+            ? item.ticker || item.label
+            : "ticker" in item && item.ticker
+              ? item.ticker
+              : item.label;
+        const rows =
+          detail.kind === "index"
+            ? await apiClient.getMarketHistory(market, identifier, 90)
+            : market === "hk"
+              ? []
+              : await apiClient.getSectorHistory(market, identifier, 90);
+        if (!cancelled) {
+          setHistory(rows.map(([date, close]) => ({ date, close })));
+        }
+      } catch {
+        if (!cancelled) setHistory([]);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail, item, market]);
+
+  if (!detail || !item) return null;
+
+  const openAI = () => {
+    const prompt =
+      market === "cn"
+        ? `分析${title}${ticker ? `（${ticker}）` : ""}相关板块和代表公司`
+        : market === "hk"
+          ? `Analyze ${title}${ticker ? ` (${ticker})` : ""} and related Hong Kong-listed companies`
+          : `Analyze ${title}${ticker ? ` (${ticker})` : ""} and the key companies driving this move`;
+    emit("open-analysis-page", { query: prompt });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Close detail"
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm"
+      />
+      <motion.aside
+        initial={{ x: 420, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 420, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 280, damping: 30 }}
+        className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl p-6 overflow-y-auto"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">
+              {isSector ? "Sector detail" : "Market index"}
+            </div>
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-50">
+              {title}
+            </h3>
+            {ticker && (
+              <div className="mt-1 text-sm font-mono text-slate-500 dark:text-slate-400">
+                {ticker}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mt-8 grid grid-cols-2 gap-3">
+          <MetricTile
+            label="Price"
+            value={item.price !== null ? `${currencyPrefix}${item.price.toLocaleString()}` : "—"}
+          />
+          <MetricTile
+            label="Change"
+            value={item.change_pct !== null ? `${isUp ? "+" : ""}${change.toFixed(2)}%` : "—"}
+            tone={isUp ? "up" : "down"}
+          />
+          {attention !== undefined && (
+            <MetricTile label="Attention" value={attention !== null ? `${attention.toFixed(2)}x` : "—"} />
+          )}
+          {volatility !== undefined && (
+            <MetricTile label="Volatility" value={volatility !== null ? `${volatility.toFixed(2)}%` : "—"} />
+          )}
+          {inflow !== undefined && (
+            <MetricTile
+              label="Net inflow"
+              value={inflow !== null && inflow !== undefined ? `${inflow >= 0 ? "+" : ""}${inflow.toFixed(2)} 亿` : "—"}
+              tone={(inflow ?? 0) >= 0 ? "up" : "down"}
+            />
+          )}
+        </div>
+
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              90-day movement
+            </h4>
+            <span className="text-xs text-slate-400">hover to inspect</span>
+          </div>
+          {historyLoading ? (
+            <div className="h-64 rounded-2xl bg-slate-100 dark:bg-slate-900 animate-pulse" />
+          ) : history.length > 0 ? (
+            <div className="h-64 rounded-2xl bg-slate-50 dark:bg-slate-900/70 p-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={history}>
+                  <defs>
+                    <linearGradient id="marketDetailFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={isUp ? "#10b981" : "#ef4444"} stopOpacity={0.28} />
+                      <stop offset="95%" stopColor={isUp ? "#10b981" : "#ef4444"} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    tickFormatter={(value) => String(value).slice(5)}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    domain={["auto", "auto"]}
+                    width={48}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgb(15 23 42)",
+                      border: "1px solid rgb(51 65 85)",
+                      borderRadius: "10px",
+                      color: "white",
+                      fontSize: "12px",
+                    }}
+                    labelStyle={{ color: "rgb(203 213 225)" }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="close"
+                    stroke={isUp ? "#10b981" : "#ef4444"}
+                    fill="url(#marketDetailFill)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 5 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 rounded-2xl bg-slate-50 dark:bg-slate-900/70 flex items-center justify-center text-sm text-slate-400">
+              No historical data available
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 bg-slate-50 dark:bg-slate-900/60">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">
+            <BarChart3 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            What this means
+          </div>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">
+            {isSector
+              ? "Use this as a starting point for deeper company-level analysis. The AI report can connect the sector move to fundamentals and risk signals."
+              : "Index moves are market context, not a company thesis. Use the AI page to turn this into a focused company or sector question."}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={openAI}
+          className="mt-5 w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center justify-center gap-2"
+        >
+          <Sparkles className="w-5 h-5" />
+          Open full AI analysis
+        </button>
+      </motion.aside>
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "up" | "down";
+}) {
+  const color =
+    tone === "up"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : tone === "down"
+        ? "text-rose-600 dark:text-rose-400"
+        : "text-slate-900 dark:text-slate-100";
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900">
+      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">{label}</div>
+      <div className={`text-lg font-bold tabular-nums flex items-center gap-1 ${color}`}>
+        {tone === "up" && <TrendingUp className="w-4 h-4" />}
+        {tone === "down" && <TrendingDown className="w-4 h-4" />}
+        {value}
+      </div>
+    </div>
   );
 }

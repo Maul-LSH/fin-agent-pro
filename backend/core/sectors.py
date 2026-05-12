@@ -10,7 +10,11 @@ core/sectors.py — 板块数据模块
 import yfinance as yf
 import akshare as ak
 
-from .utils import retry, safe_round, cached_fetch
+from .utils import retry, safe_round, cached_fetch, persistent_cached_fetch
+
+
+QUOTE_TTL = 30 * 60
+STALE_TTL = 30 * 24 * 60 * 60
 
 
 # ─────────────────────────────────────────
@@ -88,59 +92,65 @@ def get_cn_industry_sectors(top_n: int = 15) -> list:
     A 股行业板块涨跌幅排行 + 主力净流入
     返回前 top_n 个
     """
-    results = []
+    def _fetch():
+        results = []
 
-    try:
-        # 行业板块行情（缓存 5 分钟）
-        df = cached_fetch(
-            "ak.cn.industry_name",
-            lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
-        )
-        if df is None or df.empty:
-            return results
+        try:
+            df = cached_fetch(
+                "ak.cn.industry_name",
+                lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
+                ttl=QUOTE_TTL,
+            )
+            if df is None or df.empty:
+                return None
 
-        # 按涨跌幅降序，取前 N
-        df = df.sort_values("涨跌幅", ascending=False).head(top_n)
+            df = df.sort_values("涨跌幅", ascending=False).head(top_n)
 
-        # 主力净流入排行（缓存 5 分钟）
-        flow_df = cached_fetch(
-            "ak.cn.industry_fund_flow",
-            lambda: retry(
-                lambda: ak.stock_sector_fund_flow_rank(
-                    indicator="今日", sector_type="行业资金流"
+            flow_df = cached_fetch(
+                "ak.cn.industry_fund_flow",
+                lambda: retry(
+                    lambda: ak.stock_sector_fund_flow_rank(
+                        indicator="今日", sector_type="行业资金流"
+                    ),
+                    retries=1,
                 ),
-                retries=1,
-            ),
-        )
+                ttl=QUOTE_TTL,
+            )
 
-        for _, row in df.iterrows():
-            name = row.get("板块名称")
-            item = {
-                "label": name,
-                "code": row.get("板块代码"),
-                "price": safe_round(row.get("最新价")),
-                "change_pct": safe_round(row.get("涨跌幅"), 2),
-                "main_inflow_yi": None,  # 主力净流入（亿元）
-            }
-            # 匹配主力净流入
-            if flow_df is not None and not flow_df.empty:
-                try:
-                    matched = flow_df[flow_df["名称"] == name]
-                    if not matched.empty:
-                        # 主力净流入字段名可能是「今日主力净流入-净额」
-                        for col in ["今日主力净流入-净额", "主力净流入-净额"]:
-                            if col in matched.columns:
-                                val = matched.iloc[0][col]
-                                if val is not None:
-                                    item["main_inflow_yi"] = safe_round(float(val) / 1e8, 2)
-                                break
-                except Exception:
-                    pass
-            results.append(item)
-    except Exception:
-        pass
+            for _, row in df.iterrows():
+                name = row.get("板块名称")
+                item = {
+                    "label": name,
+                    "code": row.get("板块代码"),
+                    "price": safe_round(row.get("最新价")),
+                    "change_pct": safe_round(row.get("涨跌幅"), 2),
+                    "main_inflow_yi": None,
+                    "source": "akshare",
+                }
+                if flow_df is not None and not flow_df.empty:
+                    try:
+                        matched = flow_df[flow_df["名称"] == name]
+                        if not matched.empty:
+                            for col in ["今日主力净流入-净额", "主力净流入-净额"]:
+                                if col in matched.columns:
+                                    val = matched.iloc[0][col]
+                                    if val is not None:
+                                        item["main_inflow_yi"] = safe_round(float(val) / 1e8, 2)
+                                    break
+                    except Exception:
+                        pass
+                results.append(item)
+        except Exception:
+            return None
 
-    return results
+        return results or None
+
+    return persistent_cached_fetch(
+        f"sectors.cn.industry.{top_n}",
+        _fetch,
+        ttl=QUOTE_TTL,
+        stale_ttl=STALE_TTL,
+    ) or []
 
 
 # ─────────────────────────────────────────
@@ -148,52 +158,60 @@ def get_cn_industry_sectors(top_n: int = 15) -> list:
 # ─────────────────────────────────────────
 def get_cn_region_sectors(top_n: int = 15) -> list:
     """A 股地域概念板块涨跌幅"""
-    results = []
+    def _fetch():
+        results = []
 
-    try:
-        # AkShare 概念板块里包含「江苏板块」「广东板块」等地域
-        df = retry(lambda: ak.stock_board_concept_name_em(), retries=1)
-        if df is None or df.empty:
-            return results
+        try:
+            df = cached_fetch(
+                "ak.cn.concept_name",
+                lambda: retry(lambda: ak.stock_board_concept_name_em(), retries=1),
+                ttl=QUOTE_TTL,
+            )
+            if df is None or df.empty:
+                return None
 
-        # 筛选包含省份名的概念板块（江苏国资、广东自贸、北京国资等）
-        # AkShare 概念板块的地域类标签很多，只要名字里包含省/市名就算
-        provinces = [
-            "北京", "上海", "天津", "重庆", "广东", "江苏", "浙江",
-            "山东", "四川", "湖北", "湖南", "河南", "河北", "福建",
-            "安徽", "辽宁", "陕西", "江西", "山西", "云南", "贵州",
-            "广西", "甘肃", "海南", "新疆", "内蒙古", "黑龙江", "吉林",
-            "宁夏", "青海", "西藏", "深圳", "雄安",
-        ]
-        region_rows = []
-        seen_names = set()
-        for _, row in df.iterrows():
-            name = str(row.get("板块名称", ""))
-            if not name or name in seen_names:
-                continue
-            # 只要名字里包含省份/市名就算地域板块
-            if any(p in name for p in provinces):
-                region_rows.append(row)
-                seen_names.add(name)
+            provinces = [
+                "北京", "上海", "天津", "重庆", "广东", "江苏", "浙江",
+                "山东", "四川", "湖北", "湖南", "河南", "河北", "福建",
+                "安徽", "辽宁", "陕西", "江西", "山西", "云南", "贵州",
+                "广西", "甘肃", "海南", "新疆", "内蒙古", "黑龙江", "吉林",
+                "宁夏", "青海", "西藏", "深圳", "雄安",
+            ]
+            region_rows = []
+            seen_names = set()
+            for _, row in df.iterrows():
+                name = str(row.get("板块名称", ""))
+                if not name or name in seen_names:
+                    continue
+                if any(p in name for p in provinces):
+                    region_rows.append(row)
+                    seen_names.add(name)
 
-        # 按涨跌幅降序
-        region_rows.sort(
-            key=lambda r: (r.get("涨跌幅") if r.get("涨跌幅") is not None else -999),
-            reverse=True,
-        )
+            region_rows.sort(
+                key=lambda r: (r.get("涨跌幅") if r.get("涨跌幅") is not None else -999),
+                reverse=True,
+            )
 
-        for row in region_rows[:top_n]:
-            results.append({
-                "label": row.get("板块名称"),
-                "code": row.get("板块代码"),
-                "price": safe_round(row.get("最新价")),
-                "change_pct": safe_round(row.get("涨跌幅"), 2),
-                "main_inflow_yi": None,  # 地域板块通常不重点看主力净流入
-            })
-    except Exception:
-        pass
+            for row in region_rows[:top_n]:
+                results.append({
+                    "label": row.get("板块名称"),
+                    "code": row.get("板块代码"),
+                    "price": safe_round(row.get("最新价")),
+                    "change_pct": safe_round(row.get("涨跌幅"), 2),
+                    "main_inflow_yi": None,
+                    "source": "akshare",
+                })
+        except Exception:
+            return None
 
-    return results
+        return results or None
+
+    return persistent_cached_fetch(
+        f"sectors.cn.region.{top_n}",
+        _fetch,
+        ttl=QUOTE_TTL,
+        stale_ttl=STALE_TTL,
+    ) or []
 
 
 # ─────────────────────────────────────────

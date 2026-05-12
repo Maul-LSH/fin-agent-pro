@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send,
@@ -19,6 +19,8 @@ interface Props {
   apiKey: string;
   provider: string;
   onOpenSettings: () => void;
+  initialQuery?: string;
+  autoRunInitialQuery?: boolean;
 }
 
 const EXAMPLE_QUERIES_ZH = [
@@ -35,13 +37,20 @@ const EXAMPLE_QUERIES_EN = [
   "Microsoft cash flow analysis",
 ];
 
-export function AnalysisChat({ apiKey, provider, onOpenSettings }: Props) {
+export function AnalysisChat({
+  apiKey,
+  provider,
+  onOpenSettings,
+  initialQuery,
+  autoRunInitialQuery = false,
+}: Props) {
   const t = useT();
   const { lang } = useApp();
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialQuery ?? "");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const initialRunRef = useRef<string | null>(null);
 
   const examples = lang === "en" ? EXAMPLE_QUERIES_EN : EXAMPLE_QUERIES_ZH;
 
@@ -74,6 +83,15 @@ export function AnalysisChat({ apiKey, provider, onOpenSettings }: Props) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!initialQuery) return;
+    if (autoRunInitialQuery && apiKey && initialRunRef.current !== initialQuery) {
+      initialRunRef.current = initialQuery;
+      void handleSubmit(initialQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery, autoRunInitialQuery, apiKey]);
 
   return (
     <section className="space-y-6">

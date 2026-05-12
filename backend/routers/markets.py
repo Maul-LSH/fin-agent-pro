@@ -14,6 +14,7 @@ from core.markets import (
     get_us_market_overview,
     get_cn_market_overview,
     get_hk_market_overview,
+    get_market_index_history,
 )
 from core.sectors import (
     get_us_industry_sectors,
@@ -109,6 +110,16 @@ def sector_history(
     if market == "us":
         return {"data": get_us_sector_history(identifier, days=days)}
     return {"data": get_cn_sector_history(identifier, days=days)}
+
+
+@router.get("/market/history")
+def market_history(
+    market: Literal["us", "cn", "hk"],
+    identifier: str,
+    days: int = 90,
+):
+    """大盘指数历史价格序列（点击指数卡片时调用）"""
+    return {"data": get_market_index_history(market, identifier, days=days)}
 
 
 # ─────────────────────────────────────────

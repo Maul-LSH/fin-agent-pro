@@ -21,7 +21,7 @@ interface Props {
 
 export function TopNav({ onOpenSettings }: Props) {
   const t = useT();
-  const { market, setMarket } = useApp();
+  const { setMarket } = useApp();
   const pathname = usePathname();
 
   const markets: { id: Market; label: string }[] = [
@@ -31,6 +31,7 @@ export function TopNav({ onOpenSettings }: Props) {
   ];
 
   const links = [
+    { href: "/analysis", label: t("navAnalysis") },
     { href: "/portfolio", label: t("navPortfolio") },
     { href: "/compare", label: t("navCompare") },
     { href: "/valuation", label: t("navValuation") },
@@ -50,7 +51,7 @@ export function TopNav({ onOpenSettings }: Props) {
         {/* Market switcher — VISIBLE ON ALL PAGES, navigates to /markets/{id} */}
         <div className="hidden md:flex items-center gap-1">
           {markets.map((m) => {
-            const active = market === m.id;
+            const active = pathname === `/markets/${m.id}`;
             return (
               <Link
                 key={m.id}
