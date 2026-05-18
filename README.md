@@ -1,36 +1,51 @@
 # fin-agent-pro
 
-**AI financial risk analysis for people who do not have time to read every filing.**
+**The financial AI that admits what it doesn't know.**
 
-`fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It combines public-market data, quantitative risk models, an interactive market explorer, a two-stage DCF model, portfolio diagnostics, and LLM-generated financial analysis reports.
+`fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It is built for retail investors who want **honest financial analysis grounded in real data, explicit uncertainty, and zero buy/sell advice**.
 
-It is built for **risk detection, financial understanding, and educational research**. It does not generate buy/sell recommendations.
+It combines public-market data, quantitative risk models, an interactive market explorer, sector-level AI analysis, a two-stage DCF model, portfolio diagnostics, and LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
 
 ![fin-agent-pro product preview](docs/assets/readme-hero.svg)
 
 <p align="center">
+  <a href="https://github.com/Maul-LSH/fin-agent-pro"><img alt="Status" src="https://img.shields.io/badge/status-active-16a34a"></a>
   <a href="https://nextjs.org/"><img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?logo=next.js"></a>
   <a href="https://fastapi.tiangolo.com/"><img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white"></a>
+  <a href="https://opensource.org/licenses/MIT"><img alt="Market coverage" src="https://img.shields.io/badge/markets-US%20%7C%20CN%20A%20%7C%20HK-2563eb"></a>
+  <a href="https://github.com/Maul-LSH/fin-agent-pro"><img alt="Approach" src="https://img.shields.io/badge/approach-real%20data%20%2B%20explicit%20uncertainty-0f172a"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
 </p>
 
+## Product Previews
+
+| Sector Radar | Market Explorer |
+| --- | --- |
+| ![Sector radar preview](docs/assets/readme-sector-radar.svg) | ![Market explorer preview](docs/assets/readme-market-explorer.svg) |
+
+![Company risk report preview](docs/assets/readme-risk-report.svg)
+
 ## Why This Exists
 
-Most retail finance tools either show raw ratios without context or ask an AI model to summarize incomplete data. `fin-agent-pro` takes a more disciplined route:
+Most retail finance tools either show raw ratios without context or ask an AI model to summarize incomplete data with too much confidence. `fin-agent-pro` takes a more disciplined route:
 
 - Pull structured data from SEC EDGAR, Yahoo Finance, AkShare, and Financial Modeling Prep fallback endpoints.
 - Run explicit risk models before asking the LLM to explain the results.
 - Surface red flags such as solvency stress, earnings-manipulation risk, weak cash conversion, and valuation pressure.
+- Treat sector questions as sector questions — mapping the move, the key companies driving it, and what still cannot be known.
 - Keep user keys and portfolio data local wherever possible.
 
-The result is a practical analyst-style workflow: **market context -> company fundamentals -> risk model -> AI explanation -> exportable report**.
+The result is a practical analyst-style workflow:
+
+**market context -> company fundamentals -> risk model -> AI explanation -> explicit uncertainty -> exportable report**
 
 ## Product Highlights
 
 | Area | What It Does |
 | --- | --- |
 | **AI Financial Analysis** | Ask about a company in natural language and get a structured risk read with financial context, red flags, and plain-English interpretation. |
+| **Sector Radar** | Open any sector card to inspect the move, then ask AI for a sector-level read of the drivers, key companies, and remaining unknowns. |
 | **Market Explorer** | Click market indices, heatmap bubbles, or sector rankings to inspect interactive 90-day movement charts. |
 | **Risk Dashboard** | Altman Z-Score, Beneish M-Score, cash-flow quality, receivables checks, and five-dimension health scoring. |
 | **Two-Stage DCF** | 10-year DCF model with WACC build-up, normalized FCF, net debt adjustment, terminal value share, sensitivity cases, and implied-growth reverse DCF. |
@@ -161,10 +176,11 @@ Open `http://localhost:3000`.
 
 1. Pick a market from the top navigation: US, China A, or Hong Kong.
 2. Click an index, sector bubble, or sector ranking row to inspect the interactive movement chart.
-3. Open **AI Analysis** for a full-page financial report workspace.
-4. Use **DCF Valuation** for two-stage intrinsic-value modeling.
-5. Use **Portfolio** to diagnose concentration and weighted risk.
-6. Export reports to PDF when you need a snapshot.
+3. From a sector card, open **Sector Radar** to understand the move, its likely drivers, and the key companies behind it.
+4. Open **AI Analysis** for a full-page company-level financial report workspace.
+5. Use **DCF Valuation** for two-stage intrinsic-value modeling.
+6. Use **Portfolio** to diagnose concentration and weighted risk.
+7. Export reports to PDF when you need a snapshot.
 
 ## Privacy Model
 
@@ -178,6 +194,7 @@ Open `http://localhost:3000`.
 
 - [x] Apple-style homepage and market routes
 - [x] Full-page AI analysis workspace
+- [x] Sector radar workflow for market-theme analysis
 - [x] Interactive market detail charts
 - [x] SEC EDGAR ingestion for US equities
 - [x] FMP fallback + persistent stale cache

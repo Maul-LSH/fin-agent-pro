@@ -1,0 +1,23 @@
+<svg width="1200" height="760" viewBox="0 0 1200 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="760" rx="34" fill="#F8FAFC"/>
+  <rect x="44" y="44" width="1112" height="672" rx="28" fill="white" stroke="#E2E8F0"/>
+  <text x="76" y="104" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="760">Company Risk Report</text>
+  <text x="76" y="138" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="20">Quant models first. Plain-English explanation second.</text>
+  <rect x="76" y="184" width="292" height="188" rx="24" fill="#0F172A"/>
+  <text x="104" y="224" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="18">Risk score</text>
+  <text x="104" y="302" fill="white" font-family="Inter, Arial, sans-serif" font-size="72" font-weight="760">72</text>
+  <text x="200" y="302" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="26">/100</text>
+  <rect x="398" y="184" width="726" height="188" rx="24" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="428" y="224" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="700">Signals to watch</text>
+  <rect x="428" y="250" width="260" height="38" rx="19" fill="#FEF2F2"/>
+  <text x="450" y="275" fill="#B91C1C" font-family="Inter, Arial, sans-serif" font-size="16">cash conversion</text>
+  <rect x="704" y="250" width="198" height="38" rx="19" fill="#FFF7ED"/>
+  <text x="726" y="275" fill="#C2410C" font-family="Inter, Arial, sans-serif" font-size="16">valuation</text>
+  <rect x="918" y="250" width="176" height="38" rx="19" fill="#EFF6FF"/>
+  <text x="940" y="275" fill="#1D4ED8" font-family="Inter, Arial, sans-serif" font-size="16">solvency</text>
+  <rect x="76" y="406" width="1048" height="244" rx="24" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="104" y="446" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="700">Detailed AI analysis</text>
+  <text x="104" y="488" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="18">• Every conclusion anchored to supplied data</text>
+  <text x="104" y="524" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="18">• No fabricated metrics or peer benchmarks</text>
+  <text x="104" y="560" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="18">• Ends with explicit disclosure, not a trade call</text>
+</svg>

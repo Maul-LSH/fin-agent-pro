@@ -1,64 +1,60 @@
 <svg width="1400" height="760" viewBox="0 0 1400 760" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1400" height="760" rx="42" fill="#050816"/>
+  <rect width="1400" height="760" rx="42" fill="#F8FAFC"/>
   <defs>
-    <radialGradient id="g1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(290 120) rotate(46) scale(560 460)">
-      <stop stop-color="#2563EB" stop-opacity=".65"/>
-      <stop offset="1" stop-color="#2563EB" stop-opacity="0"/>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(700 284) rotate(90) scale(310 520)">
+      <stop stop-color="#DBEAFE"/>
+      <stop offset="1" stop-color="#DBEAFE" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="g2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1110 210) rotate(121) scale(520 460)">
-      <stop stop-color="#10B981" stop-opacity=".45"/>
-      <stop offset="1" stop-color="#10B981" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="line" x1="170" x2="1228" y1="534" y2="178" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#60A5FA"/>
-      <stop offset=".55" stop-color="#22C55E"/>
-      <stop offset="1" stop-color="#F59E0B"/>
+    <linearGradient id="pulse" x1="120" y1="0" x2="1280" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#94A3B8" stop-opacity=".14"/>
+      <stop offset=".24" stop-color="#2563EB"/>
+      <stop offset=".62" stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#94A3B8" stop-opacity=".14"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#000" flood-opacity=".42"/>
-    </filter>
   </defs>
-  <rect width="1400" height="760" rx="42" fill="url(#g1)"/>
-  <rect width="1400" height="760" rx="42" fill="url(#g2)"/>
 
-  <g opacity=".28">
-    <path d="M120 612H1280" stroke="#94A3B8"/>
-    <path d="M120 494H1280" stroke="#94A3B8"/>
-    <path d="M120 376H1280" stroke="#94A3B8"/>
-    <path d="M120 258H1280" stroke="#94A3B8"/>
+  <rect width="1400" height="760" rx="42" fill="url(#halo)"/>
+
+  <g opacity=".75">
+    <path d="M116 166H1284" stroke="#CBD5E1" stroke-dasharray="5 14"/>
+    <path d="M116 246H1284" stroke="#CBD5E1" stroke-dasharray="5 14"/>
+    <path d="M116 326H1284" stroke="#CBD5E1" stroke-dasharray="5 14"/>
+    <path d="M116 406H1284" stroke="#CBD5E1" stroke-dasharray="5 14"/>
   </g>
 
-  <g filter="url(#shadow)">
-    <rect x="94" y="82" width="1212" height="596" rx="34" fill="#0F172A" fill-opacity=".82" stroke="#334155"/>
-    <rect x="126" y="116" width="1148" height="68" rx="20" fill="#111827"/>
-    <circle cx="164" cy="150" r="8" fill="#EF4444"/>
-    <circle cx="190" cy="150" r="8" fill="#F59E0B"/>
-    <circle cx="216" cy="150" r="8" fill="#22C55E"/>
-    <text x="252" y="158" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="600">fin-agent-pro</text>
-    <text x="1082" y="158" fill="#60A5FA" font-family="Inter, Arial, sans-serif" font-size="18">AI Financial Risk Lens</text>
+  <text x="120" y="118" fill="#2563EB" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="4">FIN-AGENT-PRO</text>
+  <text x="120" y="162" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="760">The financial AI that admits what it doesn't know.</text>
+  <text x="120" y="204" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="23">Real data. Explicit uncertainty. No buy / sell advice.</text>
 
-    <rect x="144" y="224" width="318" height="174" rx="24" fill="#020617" stroke="#1E293B"/>
-    <text x="174" y="264" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="18">Portfolio Risk</text>
-    <text x="174" y="328" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="64" font-weight="700">72</text>
-    <text x="266" y="328" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="24">/ 100</text>
-    <path d="M174 358H420" stroke="#1E293B" stroke-width="10" stroke-linecap="round"/>
-    <path d="M174 358H348" stroke="#3B82F6" stroke-width="10" stroke-linecap="round"/>
+  <text x="120" y="288" fill="#2563EB" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="3">KNOWN SIGNALS</text>
+  <text x="120" y="322" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="20">Revenue · margins · cash flow · leverage</text>
 
-    <rect x="500" y="224" width="756" height="318" rx="24" fill="#020617" stroke="#1E293B"/>
-    <text x="532" y="264" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="18">90-day market movement</text>
-    <path d="M536 474 C620 420 660 468 742 398 C832 320 905 376 984 300 C1078 210 1150 260 1220 214" stroke="url(#line)" stroke-width="8" stroke-linecap="round"/>
-    <path d="M536 474 C620 420 660 468 742 398 C832 320 905 376 984 300 C1078 210 1150 260 1220 214 L1220 506 L536 506 Z" fill="url(#line)" opacity=".12"/>
-    <circle cx="984" cy="300" r="12" fill="#22C55E"/>
-    <rect x="914" y="238" width="154" height="46" rx="14" fill="#064E3B"/>
-    <text x="936" y="268" fill="#D1FAE5" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="600">+4.8%</text>
+  <text x="1010" y="288" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="3">UNKNOWN BOUNDARY</text>
+  <text x="1010" y="322" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="20">Shocks · regime shifts · hidden risk</text>
 
-    <rect x="144" y="430" width="318" height="112" rx="24" fill="#020617" stroke="#1E293B"/>
-    <text x="174" y="468" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="17">DCF Value</text>
-    <text x="174" y="512" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="700">$248.30</text>
-    <text x="344" y="512" fill="#22C55E" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="700">+12.4%</text>
+  <path d="M120 418H218L252 410L286 426H324L362 366L396 486L434 314L472 418H552L586 400L620 438H668L706 378L742 454L780 338L816 418H904L938 402L972 436H1020L1056 372L1092 460L1142 418H1280"
+        stroke="#93C5FD" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity=".34"/>
+  <path d="M120 418H218L252 410L286 426H324L362 366L396 486L434 314L472 418H552L586 400L620 438H668L706 378L742 454L780 338L816 418H904L938 402L972 436H1020L1056 372L1092 460L1142 418H1280"
+        stroke="url(#pulse)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 
-    <rect x="144" y="568" width="1112" height="60" rx="20" fill="#111827"/>
-    <text x="178" y="606" fill="#E2E8F0" font-family="Inter, Arial, sans-serif" font-size="19">SEC EDGAR + Yahoo Finance + AkShare + FMP fallback</text>
-    <text x="930" y="606" fill="#93C5FD" font-family="Inter, Arial, sans-serif" font-size="19">risk models → AI report → PDF</text>
-  </g>
+  <circle cx="362" cy="366" r="18" fill="#DBEAFE"/>
+  <circle cx="362" cy="366" r="8" fill="#2563EB"/>
+  <circle cx="434" cy="314" r="19" fill="#DBEAFE"/>
+  <circle cx="434" cy="314" r="9" fill="#2563EB"/>
+  <circle cx="706" cy="378" r="18" fill="#DBEAFE"/>
+  <circle cx="706" cy="378" r="8" fill="#2563EB"/>
+  <circle cx="780" cy="338" r="19" fill="#DBEAFE"/>
+  <circle cx="780" cy="338" r="9" fill="#2563EB"/>
+
+  <rect x="120" y="560" width="330" height="110" rx="24" fill="white" stroke="#E2E8F0"/>
+  <text x="148" y="596" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">Sector Radar</text>
+  <text x="148" y="630" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="18">Move · drivers · unknowns</text>
+
+  <rect x="486" y="560" width="330" height="110" rx="24" fill="white" stroke="#E2E8F0"/>
+  <text x="514" y="596" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">Risk Models</text>
+  <text x="514" y="630" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="18">Altman · Beneish · cash quality</text>
+
+  <rect x="852" y="560" width="428" height="110" rx="24" fill="#0F172A"/>
+  <text x="880" y="596" fill="#BFDBFE" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">Analyst workflow</text>
+  <text x="880" y="630" fill="white" font-family="Inter, Arial, sans-serif" font-size="18">market context → evidence → explicit uncertainty</text>
 </svg>

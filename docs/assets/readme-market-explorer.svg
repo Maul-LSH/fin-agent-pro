@@ -1,0 +1,22 @@
+<svg width="1200" height="760" viewBox="0 0 1200 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="760" rx="34" fill="#F8FAFC"/>
+  <rect x="44" y="44" width="1112" height="672" rx="28" fill="white" stroke="#E2E8F0"/>
+  <text x="76" y="104" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="760">Market Explorer</text>
+  <text x="76" y="138" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="20">Interactive indices, sector heatmaps, and 90-day detail charts.</text>
+  <rect x="76" y="182" width="514" height="468" rx="24" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <circle cx="206" cy="284" r="68" fill="#DBEAFE"/>
+  <circle cx="206" cy="284" r="46" fill="#60A5FA"/>
+  <circle cx="346" cy="344" r="88" fill="#DCFCE7"/>
+  <circle cx="346" cy="344" r="60" fill="#22C55E"/>
+  <circle cx="226" cy="470" r="54" fill="#FEE2E2"/>
+  <circle cx="226" cy="470" r="38" fill="#EF4444"/>
+  <circle cx="426" cy="486" r="72" fill="#EDE9FE"/>
+  <circle cx="426" cy="486" r="50" fill="#8B5CF6"/>
+  <text x="126" y="602" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="18">Heatmap bubbles surface attention and volatility.</text>
+  <rect x="626" y="182" width="498" height="468" rx="24" fill="#0F172A"/>
+  <text x="658" y="226" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="18">90-day movement</text>
+  <path d="M658 536 C720 490 764 510 824 448 C894 380 942 430 996 360 C1050 292 1080 330 1092 286" stroke="#60A5FA" stroke-width="7" stroke-linecap="round"/>
+  <path d="M658 536 C720 490 764 510 824 448 C894 380 942 430 996 360 C1050 292 1080 330 1092 286" stroke="#BFDBFE" stroke-width="18" stroke-linecap="round" opacity=".22"/>
+  <rect x="658" y="576" width="188" height="34" rx="17" fill="#1E293B"/>
+  <text x="678" y="598" fill="#BFDBFE" font-family="Inter, Arial, sans-serif" font-size="15">click to inspect</text>
+</svg>
