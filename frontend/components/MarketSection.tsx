@@ -309,12 +309,13 @@ function MarketDetailDrawer({
     if (!detail || !item) return;
     let cancelled = false;
     const loadHistory = async () => {
+      setHistory([]);
       setHistoryLoading(true);
       try {
         const identifier =
           detail.kind === "index"
             ? item.ticker || item.label
-            : "ticker" in item && item.ticker
+            : market === "us" && "ticker" in item && item.ticker
               ? item.ticker
               : item.label;
         const rows =
@@ -324,7 +325,11 @@ function MarketDetailDrawer({
               ? []
               : await apiClient.getSectorHistory(market, identifier, 90);
         if (!cancelled) {
-          setHistory(rows.map(([date, close]) => ({ date, close })));
+          setHistory(
+            rows
+              .filter(([, close]) => typeof close === "number" && Number.isFinite(close))
+              .map(([date, close]) => ({ date, close }))
+          );
         }
       } catch {
         if (!cancelled) setHistory([]);
@@ -347,7 +352,7 @@ function MarketDetailDrawer({
         : market === "hk"
           ? `Analyze ${title}${ticker ? ` (${ticker})` : ""} and related Hong Kong-listed companies`
           : `Analyze ${title}${ticker ? ` (${ticker})` : ""} and the key companies driving this move`;
-    emit("open-analysis-page", { query: prompt });
+    emit("open-analysis-page", { query: prompt, mode: isSector ? "sector" : "company" });
   };
 
   return (
@@ -480,7 +485,7 @@ function MarketDetailDrawer({
           </div>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">
             {isSector
-              ? "Use this as a starting point for deeper company-level analysis. The AI report can connect the sector move to fundamentals and risk signals."
+              ? "Use this as a starting point for sector-level analysis. The AI report can explain the move, surface likely drivers, and name the key companies behind the theme."
               : "Index moves are market context, not a company thesis. Use the AI page to turn this into a focused company or sector question."}
           </p>
         </div>

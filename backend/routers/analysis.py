@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.data import get_company_info, get_financial_data
-from core.agent import extract_company_and_intent, generate_analysis
+from core.agent import extract_company_and_intent, generate_analysis, generate_sector_analysis
 from core.risk import assess_company_risk
 
 
@@ -22,6 +22,7 @@ class AnalyzeRequest(BaseModel):
     llm_api_key: str
     provider: str = "Claude (Anthropic)"
     lang: str = "zh"
+    analysis_mode: str = "company"
 
 
 class CompareRequest(BaseModel):
@@ -41,6 +42,18 @@ def analyze(req: AnalyzeRequest):
     3. 风险评估（Altman Z, Beneish M, 现金流匹配等）
     4. LLM 生成可读的分析报告
     """
+    if req.analysis_mode == "sector":
+        analysis = generate_sector_analysis(
+            user_input=req.user_input,
+            llm_api_key=req.llm_api_key,
+            provider=req.provider,
+            lang=req.lang,
+        )
+        return {
+            "status": "ok",
+            "analysis": analysis,
+        }
+
     # 第一步：意图识别
     intent = extract_company_and_intent(
         req.user_input,

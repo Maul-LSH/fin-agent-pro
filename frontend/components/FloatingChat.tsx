@@ -49,8 +49,11 @@ export function FloatingChat({ onOpenSettings }: Props) {
   }, []);
 
   useEffect(() => {
-    const off = on<{ query?: string }>("open-analysis-page", (detail) => {
-      const query = detail?.query ? `?q=${encodeURIComponent(detail.query)}` : "";
+    const off = on<{ query?: string; mode?: "company" | "sector" }>("open-analysis-page", (detail) => {
+      const params = new URLSearchParams();
+      if (detail?.query) params.set("q", detail.query);
+      if (detail?.mode) params.set("mode", detail.mode);
+      const query = params.toString() ? `?${params.toString()}` : "";
       setOpen(false);
       router.push(`/analysis${query}`);
     });

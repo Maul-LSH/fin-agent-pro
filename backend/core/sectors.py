@@ -235,18 +235,30 @@ def get_us_sector_history(ticker: str, days: int = 90) -> list:
         return []
 
 
-def get_cn_sector_history(board_code: str, days: int = 90) -> list:
+def get_cn_sector_history(board_identifier: str, days: int = 90) -> list:
     """
     A 股行业/概念板块历史价格序列
     AkShare 用板块名查询，不是代码
     """
-    # board_code 在我们这里实际传的是名字
+    board_name = board_identifier
     try:
+        # 兼容前端传入板块代码的情况：AkShare 历史接口实际需要板块名称。
+        if board_identifier and str(board_identifier).isdigit():
+            df_names = cached_fetch(
+                "ak.cn.industry_name",
+                lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
+                ttl=QUOTE_TTL,
+            )
+            if df_names is not None and not df_names.empty:
+                matched = df_names[df_names["板块代码"].astype(str) == str(board_identifier)]
+                if not matched.empty:
+                    board_name = matched.iloc[0]["板块名称"]
+
         # 行业板块历史
-        df = retry(lambda: ak.stock_board_industry_hist_em(symbol=board_code, period="日k", adjust=""), retries=1)
+        df = retry(lambda: ak.stock_board_industry_hist_em(symbol=board_name, period="日k", adjust=""), retries=1)
         if df is None or df.empty:
             # 尝试概念板块（地域板块属于这里）
-            df = retry(lambda: ak.stock_board_concept_hist_em(symbol=board_code, period="日k", adjust=""), retries=1)
+            df = retry(lambda: ak.stock_board_concept_hist_em(symbol=board_name, period="日k", adjust=""), retries=1)
 
         if df is None or df.empty:
             return []

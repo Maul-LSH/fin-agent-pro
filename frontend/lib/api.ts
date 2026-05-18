@@ -174,6 +174,7 @@ export const apiClient = {
     llm_api_key: string;
     provider: string;
     lang: string;
+    analysis_mode?: "company" | "sector";
   }): Promise<AnalyzeResponse> => {
     const { data } = await api.post("/api/analyze", params);
     return data;

@@ -29,6 +29,7 @@ function AnalysisPageContent() {
   const t = useT();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
+  const initialMode = searchParams.get("mode") === "sector" ? "sector" : "company";
   const [config] = useState(loadSavedConfig);
 
   return (
@@ -58,6 +59,7 @@ function AnalysisPageContent() {
             onOpenSettings={() => window.dispatchEvent(new Event("open-settings"))}
             initialQuery={initialQuery}
             autoRunInitialQuery={Boolean(initialQuery)}
+            analysisMode={initialMode}
           />
         </div>
       </section>

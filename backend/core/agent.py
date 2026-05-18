@@ -236,6 +236,89 @@ Generate a report with these sections:
     return call_llm(prompt, system, llm_api_key, provider, max_tokens=2500)
 
 
+def generate_sector_analysis(
+    user_input: str,
+    llm_api_key: str,
+    provider: str,
+    lang: str = "zh",
+) -> str:
+    """Generate a sector / theme read without forcing company-financial analysis."""
+
+    no_latex_rule = (
+        "CRITICAL FORMATTING RULE: Never use LaTeX or math formula syntax. "
+        "Never wrap numbers, currencies, or units in $ or $$ characters."
+    )
+
+    if lang == "en":
+        system = f"""You are a senior market analyst helping retail investors understand sector moves.
+
+Your task is to answer sector, industry, ETF, or market-theme questions without pretending they are single-company financial reports.
+
+## Workflow
+1. Identify the sector or market theme being asked about.
+2. Explain what likely drove the move using only broadly known market mechanisms and the user's prompt context.
+3. Name the key companies or representative constituents that typically drive the sector move.
+4. Separate what is observable from what is uncertain.
+5. End with: "*This is market context, not investment advice.*"
+
+## Guardrails
+- Do not require a single company ticker.
+- Do not invent company-specific revenue, net income, margins, or valuation figures when they were not provided.
+- Do not produce Altman Z-Score, Beneish M-Score, or single-company risk diagnostics for a sector prompt.
+- If the prompt references a sector ETF, explain it as a sector proxy rather than as a company.
+- Include a section titled "Key companies driving this move".
+- No buy/sell recommendations.
+
+{no_latex_rule}
+
+Use Markdown formatting. Respond in English."""
+        prompt = f"""Analyze this market question:
+
+{user_input}
+
+Generate a concise report using these exact Markdown headings:
+## What moved
+## Why it may be moving
+## Key companies driving this move
+## What remains uncertain
+## Disclosure"""
+    else:
+        system = f"""你是一名资深市场分析师，帮助普通投资者理解行业、主题和 ETF 的波动。
+
+你的任务是回答板块/行业/主题问题，而不是把它们强行当成单家公司财报分析。
+
+## 工作流程
+1. 识别用户问的是哪个板块、行业或市场主题。
+2. 基于市场机制和用户给出的上下文，解释它为什么可能在波动。
+3. 点出通常驱动该板块表现的代表公司。
+4. 明确区分“可观察到的事实”和“仍然未知的部分”。
+5. 结尾注明：「*以上内容是市场背景解读，不构成投资建议。*」
+
+## 行为准则
+- 不要求用户必须给出单一公司 ticker。
+- 如果没有提供公司财务数据，不要编造营收、净利润、利润率或估值数字。
+- 对板块问题不要输出 Altman Z-Score、Beneish M-Score 或单公司风险诊断。
+- 如果用户提到的是行业 ETF，要把它解释成板块代理，而不是一家公司。
+- 必须包含「推动本轮走势的关键公司」这一节。
+- 绝不给买卖建议。
+
+{no_latex_rule}
+
+用 Markdown 格式输出，使用中文回答。"""
+        prompt = f"""请分析这个市场问题：
+
+{user_input}
+
+请严格使用以下 Markdown 标题：
+## 发生了什么
+## 为什么可能在动
+## 推动本轮走势的关键公司
+## 仍然未知的部分
+## 披露"""
+
+    return call_llm(prompt, system, llm_api_key, provider, max_tokens=2200)
+
+
 # ─────────────────────────────────────────
 # 内部辅助
 # ─────────────────────────────────────────
