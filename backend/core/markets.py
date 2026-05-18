@@ -4,6 +4,8 @@ core/markets.py — 市场概览模块（顶部指数）
 A 股：上证 + 深证（包含深证成指、创业板指）
 """
 
+from datetime import datetime, timedelta
+
 import yfinance as yf
 import akshare as ak
 import requests
@@ -69,6 +71,11 @@ def get_cn_market_overview() -> list:
             lambda: retry(lambda: ak.stock_zh_index_spot_em(symbol="深证系列指数"), retries=1),
             ttl=QUOTE_TTL,
         )
+        sina_df = cached_fetch(
+            "ak.cn.index_sina",
+            lambda: retry(lambda: ak.stock_zh_index_spot_sina(), retries=1),
+            ttl=QUOTE_TTL,
+        )
 
         results = []
         for code, label, source, fmp_symbols in indices:
@@ -84,6 +91,13 @@ def get_cn_market_overview() -> list:
                         item["source"] = "akshare"
                 except Exception:
                     pass
+
+            if item["price"] is None:
+                quote = _cn_index_quote_from_sina(sina_df, code)
+                if quote:
+                    item["price"] = quote.get("price")
+                    item["change_pct"] = quote.get("change_pct")
+                    item["source"] = quote.get("source")
 
             if item["price"] is None:
                 quote = _cn_index_quote_from_daily(code) or _first_fmp_quote(fmp_symbols)
@@ -126,19 +140,33 @@ def get_hk_market_overview() -> list:
             ("HSTECH", "HS Tech / 恒生科技", ["^HSTECH", "HSTECH"]),
             ("HSCCI", "Red Chip / 红筹", ["^HSCCI", "HSCCI"]),
         ]
+        sina_df = cached_fetch(
+            "ak.hk.index_sina",
+            lambda: retry(lambda: ak.stock_hk_index_spot_sina(), retries=1),
+            ttl=QUOTE_TTL,
+        )
 
         results = []
         for symbol, label, fmp_symbols in indices:
             item = {"label": label, "ticker": symbol, "price": None, "change_pct": None, "source": None}
+            quote = _hk_index_quote_from_sina(sina_df, symbol)
+            if quote:
+                item["price"] = quote.get("price")
+                item["change_pct"] = quote.get("change_pct")
+                item["source"] = quote.get("source")
+
             try:
-                df = cached_fetch(
-                    f"ak.hk.index_daily.{symbol}",
-                    lambda s=symbol: retry(
-                        lambda: ak.stock_hk_index_daily_em(symbol=s),
-                        retries=1,
-                    ),
-                    ttl=QUOTE_TTL,
-                )
+                if item["price"] is None:
+                    df = cached_fetch(
+                        f"ak.hk.index_daily.{symbol}",
+                        lambda s=symbol: retry(
+                            lambda: ak.stock_hk_index_daily_em(symbol=s),
+                            retries=1,
+                        ),
+                        ttl=QUOTE_TTL,
+                    )
+                else:
+                    df = None
                 if df is not None and not df.empty and len(df) >= 2:
                     close_col = None
                     for c in ["close", "收盘", "收盘价", "latest", "最新价"]:
@@ -205,6 +233,24 @@ def _cn_index_quote_from_daily(code: str) -> dict | None:
         return None
 
 
+def _cn_index_quote_from_sina(df, code: str) -> dict | None:
+    if df is None or df.empty:
+        return None
+    try:
+        symbol = _cn_index_symbol(code)
+        row = df[df["代码"] == symbol]
+        if row.empty:
+            return None
+        r = row.iloc[0]
+        return {
+            "price": safe_round(r.get("最新价")),
+            "change_pct": safe_round(r.get("涨跌幅"), 2),
+            "source": "sina",
+        }
+    except Exception:
+        return None
+
+
 def _hk_red_chip_quote_from_aastocks() -> dict | None:
     try:
         html = requests.get(
@@ -239,6 +285,25 @@ def _hk_red_chip_quote_from_aastocks() -> dict | None:
         return None
 
 
+def _hk_index_quote_from_sina(df, symbol: str) -> dict | None:
+    if df is None or df.empty:
+        return None
+    try:
+        row = df[df["代码"] == symbol]
+        if row.empty:
+            row = df[df["代码"] == f"hk{symbol}"]
+        if row.empty:
+            return None
+        r = row.iloc[0]
+        return {
+            "price": safe_round(r.get("最新价")),
+            "change_pct": safe_round(r.get("涨跌幅"), 2),
+            "source": "sina",
+        }
+    except Exception:
+        return None
+
+
 def get_market_index_history(market: str, identifier: str, days: int = 90) -> list:
     """大盘指数历史走势。返回 [(date, close), ...]"""
     if market == "us":
@@ -264,39 +329,117 @@ def _yf_history(ticker: str, days: int) -> list:
 
 
 def _cn_index_history(code: str, days: int) -> list:
+    """
+    A 股指数历史行情分层回退：
+    1. 东方财富指数日线（带交易所前缀）
+    2. 新浪指数日线
+    3. 腾讯指数日线
+    4. 深证系 -> 国证指数历史
+    5. 沪深 300 -> 中证指数历史
+    """
+    symbol = _cn_index_symbol(code)
+    fetchers = [
+        lambda: ak.stock_zh_index_daily_em(symbol=symbol),
+        lambda: ak.stock_zh_index_daily(symbol=symbol),
+        lambda: ak.stock_zh_index_daily_tx(symbol=symbol),
+    ]
+
+    for fetcher in fetchers:
+        rows = _normalize_index_history_frame(retry(fetcher, retries=1), days)
+        if rows:
+            return rows
+
+    if code.startswith("399"):
+        rows = _cn_cni_index_history(code, days)
+        if rows:
+            return rows
+
+    if code == "000300":
+        rows = _cn_csindex_history(code, days)
+        if rows:
+            return rows
+
+    return []
+
+
+def _cn_index_symbol(code: str) -> str:
+    if code.startswith("399"):
+        return f"sz{code}"
+    return f"sh{code}"
+
+
+def _normalize_index_history_frame(df, days: int) -> list:
+    if df is None or df.empty:
+        return []
+    df = df.tail(days)
+    close_col = _first_existing_column(df, ["close", "收盘", "收盘价", "latest", "最新价"])
+    date_col = _first_existing_column(df, ["date", "日期"])
+    if not close_col or not date_col:
+        return []
+    return [
+        (str(d)[:10], safe_round(c))
+        for d, c in zip(df[date_col], df[close_col])
+        if safe_round(c) is not None
+    ]
+
+
+def _cn_cni_index_history(code: str, days: int) -> list:
     try:
-        df = retry(lambda: ak.stock_zh_index_daily_em(symbol=code), retries=1)
-        if df is None or df.empty:
-            return []
-        df = df.tail(days)
-        close_col = _first_existing_column(df, ["close", "收盘", "收盘价", "latest", "最新价"])
-        date_col = _first_existing_column(df, ["date", "日期"])
-        if not close_col or not date_col:
-            return []
-        return [
-            (str(d)[:10], safe_round(c))
-            for d, c in zip(df[date_col], df[close_col])
-        ]
+        end = datetime.now().strftime("%Y%m%d")
+        start = (datetime.now() - timedelta(days=max(days * 3, 180))).strftime("%Y%m%d")
+        df = retry(
+            lambda: ak.index_hist_cni(symbol=code, start_date=start, end_date=end),
+            retries=1,
+        )
+        return _normalize_index_history_frame(df, days)
+    except Exception:
+        return []
+
+
+def _cn_csindex_history(code: str, days: int) -> list:
+    try:
+        end = datetime.now().strftime("%Y%m%d")
+        start = (datetime.now() - timedelta(days=max(days * 3, 180))).strftime("%Y%m%d")
+        df = retry(
+            lambda: ak.stock_zh_index_hist_csindex(
+                symbol=code,
+                start_date=start,
+                end_date=end,
+            ),
+            retries=1,
+        )
+        return _normalize_index_history_frame(df, days)
     except Exception:
         return []
 
 
 def _hk_index_history(symbol: str, days: int) -> list:
-    try:
-        df = retry(lambda: ak.stock_hk_index_daily_em(symbol=symbol), retries=1)
-        if df is None or df.empty:
-            return []
-        df = df.tail(days)
-        close_col = _first_existing_column(df, ["close", "收盘", "收盘价", "latest", "最新价"])
-        date_col = _first_existing_column(df, ["date", "日期"])
-        if not close_col or not date_col:
-            return []
-        return [
-            (str(d)[:10], safe_round(c))
-            for d, c in zip(df[date_col], df[close_col])
-        ]
-    except Exception:
-        return []
+    fetchers = [
+        lambda: ak.stock_hk_index_daily_em(symbol=symbol),
+        lambda: ak.stock_hk_index_daily_sina(symbol=symbol),
+    ]
+
+    for fetcher in fetchers:
+        rows = _normalize_index_history_frame(retry(fetcher, retries=1), days)
+        if rows:
+            return rows
+
+    yahoo_symbol = _hk_yahoo_symbol(symbol)
+    if yahoo_symbol:
+        rows = _yf_history(yahoo_symbol, days)
+        if rows:
+            return rows
+
+    return []
+
+
+def _hk_yahoo_symbol(symbol: str) -> str | None:
+    return {
+        "HSI": "^HSI",
+        "HSCEI": "^HSCE",
+        "HSTECH": "^HSTECH",
+        "HSCCI": "^HSCCI",
+    }.get(symbol)
 
 
 def _first_existing_column(df, columns: list[str]) -> str | None:

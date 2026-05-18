@@ -106,19 +106,39 @@ export interface AnalyzeResponse {
 // ─────────────────────────────────────────
 export type MarketKey = "us" | "cn" | "hk";
 
+const marketOverviewCache = new Map<MarketKey, Promise<MarketIndex[]>>();
+const sectorCache = new Map<string, Promise<Sector[]>>();
+const attentionCache = new Map<string, Promise<AttentionSector[]>>();
+
+function memoize<K, T>(cache: Map<K, Promise<T>>, key: K, loader: () => Promise<T>) {
+  const existing = cache.get(key);
+  if (existing) return existing;
+
+  const request = loader().catch((error) => {
+    cache.delete(key);
+    throw error;
+  });
+  cache.set(key, request);
+  return request;
+}
+
 // API Methods
 // ─────────────────────────────────────────
 export const apiClient = {
   // 大盘指数
   getMarkets: async (market: MarketKey): Promise<MarketIndex[]> => {
-    const { data } = await api.get(`/api/markets/${market}`);
-    return data.data;
+    return memoize(marketOverviewCache, market, async () => {
+      const { data } = await api.get(`/api/markets/${market}`);
+      return data.data;
+    });
   },
 
   // 板块涨跌列表
   getSectors: async (market: MarketKey, category: string): Promise<Sector[]> => {
-    const { data } = await api.get(`/api/sectors/${market}/${category}`);
-    return data.data;
+    return memoize(sectorCache, `${market}:${category}`, async () => {
+      const { data } = await api.get(`/api/sectors/${market}/${category}`);
+      return data.data;
+    });
   },
 
   // 板块关注度评分（用于象限图）
@@ -126,10 +146,29 @@ export const apiClient = {
     market: MarketKey,
     category: string = "industry"
   ): Promise<AttentionSector[]> => {
-    const { data } = await api.get(
-      `/api/attention/${market}?category=${category}`
-    );
-    return data.data;
+    return memoize(attentionCache, `${market}:${category}`, async () => {
+      const { data } = await api.get(
+        `/api/attention/${market}?category=${category}`
+      );
+      return data.data;
+    });
+  },
+
+  // 首屏进入后预热「第一层」市场数据。
+  // CN: 大盘 + 行业 + 热度；HK: 大盘（港股当前无行业热度图）
+  preloadPrimaryMarketData: async (market: MarketKey): Promise<void> => {
+    if (market === "cn") {
+      await Promise.allSettled([
+        apiClient.getMarkets("cn"),
+        apiClient.getSectors("cn", "industry"),
+        apiClient.getAttention("cn", "industry"),
+      ]);
+      return;
+    }
+
+    if (market === "hk") {
+      await Promise.allSettled([apiClient.getMarkets("hk")]);
+    }
   },
 
   // 板块历史价格
