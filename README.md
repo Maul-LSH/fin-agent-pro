@@ -1,5 +1,10 @@
 # fin-agent-pro
 
+<p align="right">
+  <a href="./README.md">English</a> ·
+  <a href="./README.zh-CN.md">中文</a>
+</p>
+
 **The financial AI that admits what it doesn't know.**
 
 `fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It is built for retail investors who want **honest financial analysis grounded in real data, explicit uncertainty, and zero buy/sell advice**.
