@@ -1,7 +1,7 @@
 <svg width="1400" height="760" viewBox="0 0 1400 760" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect width="1400" height="760" rx="42" fill="#F8FAFC"/>
   <defs>
-    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(700 284) rotate(90) scale(310 520)">
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(700 336) rotate(90) scale(310 520)">
       <stop stop-color="#DBEAFE"/>
       <stop offset="1" stop-color="#DBEAFE" stop-opacity="0"/>
     </radialGradient>
@@ -32,19 +32,19 @@
   <text x="1010" y="288" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="3">UNKNOWN BOUNDARY</text>
   <text x="1010" y="322" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="20">Shocks · regime shifts · hidden risk</text>
 
-  <path d="M120 418H218L252 410L286 426H324L362 366L396 486L434 314L472 418H552L586 400L620 438H668L706 378L742 454L780 338L816 418H904L938 402L972 436H1020L1056 372L1092 460L1142 418H1280"
+  <path d="M120 470H218L252 462L286 478H324L362 418L396 538L434 366L472 470H552L586 452L620 490H668L706 430L742 506L780 390L816 470H904L938 454L972 488H1020L1056 424L1092 512L1142 470H1280"
         stroke="#93C5FD" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity=".34"/>
-  <path d="M120 418H218L252 410L286 426H324L362 366L396 486L434 314L472 418H552L586 400L620 438H668L706 378L742 454L780 338L816 418H904L938 402L972 436H1020L1056 372L1092 460L1142 418H1280"
+  <path d="M120 470H218L252 462L286 478H324L362 418L396 538L434 366L472 470H552L586 452L620 490H668L706 430L742 506L780 390L816 470H904L938 454L972 488H1020L1056 424L1092 512L1142 470H1280"
         stroke="url(#pulse)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <circle cx="362" cy="366" r="18" fill="#DBEAFE"/>
-  <circle cx="362" cy="366" r="8" fill="#2563EB"/>
-  <circle cx="434" cy="314" r="19" fill="#DBEAFE"/>
-  <circle cx="434" cy="314" r="9" fill="#2563EB"/>
-  <circle cx="706" cy="378" r="18" fill="#DBEAFE"/>
-  <circle cx="706" cy="378" r="8" fill="#2563EB"/>
-  <circle cx="780" cy="338" r="19" fill="#DBEAFE"/>
-  <circle cx="780" cy="338" r="9" fill="#2563EB"/>
+  <circle cx="362" cy="418" r="18" fill="#DBEAFE"/>
+  <circle cx="362" cy="418" r="8" fill="#2563EB"/>
+  <circle cx="434" cy="366" r="19" fill="#DBEAFE"/>
+  <circle cx="434" cy="366" r="9" fill="#2563EB"/>
+  <circle cx="706" cy="430" r="18" fill="#DBEAFE"/>
+  <circle cx="706" cy="430" r="8" fill="#2563EB"/>
+  <circle cx="780" cy="390" r="19" fill="#DBEAFE"/>
+  <circle cx="780" cy="390" r="9" fill="#2563EB"/>
 
   <rect x="120" y="560" width="330" height="110" rx="24" fill="white" stroke="#E2E8F0"/>
   <text x="148" y="596" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">Sector Radar</text>
