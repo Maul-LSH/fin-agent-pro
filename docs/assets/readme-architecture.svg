@@ -1,54 +1,126 @@
-<svg width="1400" height="680" viewBox="0 0 1400 680" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1400" height="680" rx="36" fill="#F8FAFC"/>
+<svg width="1600" height="860" viewBox="0 0 1600 860" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="860" rx="40" fill="#F8FAFC"/>
   <defs>
-    <filter id="s" x="-10%" y="-20%" width="120%" height="150%">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0F172A" flood-opacity=".12"/>
+    <filter id="shadow" x="-10%" y="-15%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0F172A" flood-opacity=".10"/>
     </filter>
-    <linearGradient id="b" x1="0" x2="1">
+    <linearGradient id="arrow" x1="0" y1="0" x2="1" y2="0">
       <stop stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#10B981"/>
+      <stop offset="1" stop-color="#06B6D4"/>
     </linearGradient>
   </defs>
-  <text x="80" y="88" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="760">How fin-agent-pro works</text>
-  <text x="80" y="126" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="22">A full-stack financial diagnostics pipeline: data ingestion, quant risk models, valuation, and AI explanation.</text>
 
-  <g filter="url(#s)">
-    <rect x="80" y="190" width="260" height="340" rx="28" fill="white"/>
-    <text x="112" y="238" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700">Data Layer</text>
-    <text x="112" y="288" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">SEC EDGAR</text>
-    <text x="112" y="326" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">Yahoo Finance</text>
-    <text x="112" y="364" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">AkShare</text>
-    <text x="112" y="402" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">FMP fallback</text>
-    <text x="112" y="470" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="17">30 min market cache</text>
-    <text x="112" y="502" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="17">7 day financial cache</text>
+  <text x="80" y="92" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="760">
+    How fin-agent-pro works
+  </text>
+  <text x="80" y="138" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="24">
+    Real data enters first. Models structure the evidence. AI explains the result without pretending certainty.
+  </text>
+
+  <!-- Left column -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="210" width="380" height="510" rx="30" fill="white"/>
   </g>
+  <text x="116" y="264" fill="#2563EB" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">
+    01 · DATA
+  </text>
+  <text x="116" y="314" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="740">
+    Market + filings
+  </text>
 
-  <path d="M360 360H455" stroke="url(#b)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M438 338L460 360L438 382" stroke="#10B981" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="116" y="354" width="308" height="58" rx="18" fill="#EFF6FF"/>
+  <text x="142" y="391" fill="#1D4ED8" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    SEC EDGAR
+  </text>
+  <rect x="116" y="430" width="308" height="58" rx="18" fill="#ECFEFF"/>
+  <text x="142" y="467" fill="#0F766E" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    Yahoo Finance
+  </text>
+  <rect x="116" y="506" width="308" height="58" rx="18" fill="#F0FDF4"/>
+  <text x="142" y="543" fill="#15803D" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    AkShare
+  </text>
+  <rect x="116" y="582" width="308" height="58" rx="18" fill="#FFF7ED"/>
+  <text x="142" y="619" fill="#C2410C" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    FMP fallback
+  </text>
+  <text x="116" y="684" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="19">
+    quotes · statements · sector history
+  </text>
 
-  <g filter="url(#s)">
-    <rect x="480" y="190" width="300" height="340" rx="28" fill="white"/>
-    <text x="512" y="238" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700">FastAPI Core</text>
-    <rect x="512" y="274" width="220" height="42" rx="14" fill="#EFF6FF"/>
-    <text x="532" y="302" fill="#1D4ED8" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="650">/api/analyze</text>
-    <rect x="512" y="334" width="220" height="42" rx="14" fill="#ECFDF5"/>
-    <text x="532" y="362" fill="#047857" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="650">/api/markets</text>
-    <rect x="512" y="394" width="220" height="42" rx="14" fill="#FFF7ED"/>
-    <text x="532" y="422" fill="#C2410C" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="650">/api/dcf</text>
-    <text x="512" y="486" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="17">Domain routers + pure core logic</text>
+  <!-- Middle column -->
+  <g filter="url(#shadow)">
+    <rect x="610" y="210" width="380" height="510" rx="30" fill="white"/>
   </g>
+  <text x="646" y="264" fill="#0F766E" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">
+    02 · CORE
+  </text>
+  <text x="646" y="314" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="740">
+    FastAPI engine
+  </text>
 
-  <path d="M800 360H895" stroke="url(#b)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M878 338L900 360L878 382" stroke="#10B981" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="646" y="354" width="308" height="58" rx="18" fill="#EFF6FF"/>
+  <text x="672" y="391" fill="#1D4ED8" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    /api/markets
+  </text>
+  <rect x="646" y="430" width="308" height="58" rx="18" fill="#ECFEFF"/>
+  <text x="672" y="467" fill="#0F766E" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    /api/analyze
+  </text>
+  <rect x="646" y="506" width="308" height="58" rx="18" fill="#F5F3FF"/>
+  <text x="672" y="543" fill="#6D28D9" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    /api/dcf
+  </text>
+  <rect x="646" y="582" width="308" height="58" rx="18" fill="#FEF2F2"/>
+  <text x="672" y="619" fill="#BE123C" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    risk models
+  </text>
+  <text x="646" y="684" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="19">
+    Altman · Beneish · sector mode · DCF
+  </text>
 
-  <g filter="url(#s)">
-    <rect x="920" y="190" width="400" height="340" rx="28" fill="white"/>
-    <text x="952" y="238" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700">Next.js Experience</text>
-    <text x="952" y="290" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">Market explorer + interactive charts</text>
-    <text x="952" y="330" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">AI financial report workspace</text>
-    <text x="952" y="370" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">Portfolio diagnostic</text>
-    <text x="952" y="410" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="20">Two-stage DCF model</text>
-    <rect x="952" y="458" width="238" height="44" rx="18" fill="#0F172A"/>
-    <text x="980" y="487" fill="white" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="650">Exportable reports</text>
+  <!-- Right column -->
+  <g filter="url(#shadow)">
+    <rect x="1140" y="210" width="380" height="510" rx="30" fill="white"/>
   </g>
+  <text x="1176" y="264" fill="#7C3AED" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">
+    03 · EXPERIENCE
+  </text>
+  <text x="1176" y="314" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="740">
+    Next.js UI
+  </text>
+
+  <rect x="1176" y="354" width="308" height="58" rx="18" fill="#EFF6FF"/>
+  <text x="1202" y="391" fill="#1D4ED8" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    Market Explorer
+  </text>
+  <rect x="1176" y="430" width="308" height="58" rx="18" fill="#ECFEFF"/>
+  <text x="1202" y="467" fill="#0F766E" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    Sector Radar
+  </text>
+  <rect x="1176" y="506" width="308" height="58" rx="18" fill="#F5F3FF"/>
+  <text x="1202" y="543" fill="#6D28D9" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    AI Reports
+  </text>
+  <rect x="1176" y="582" width="308" height="58" rx="18" fill="#FFF7ED"/>
+  <text x="1202" y="619" fill="#C2410C" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="650">
+    PDF exports
+  </text>
+  <text x="1176" y="684" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="19">
+    explainable output for real users
+  </text>
+
+  <!-- arrows -->
+  <path d="M480 464H578" stroke="url(#arrow)" stroke-width="10" stroke-linecap="round"/>
+  <path d="M552 434L582 464L552 494" stroke="#06B6D4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1010 464H1108" stroke="url(#arrow)" stroke-width="10" stroke-linecap="round"/>
+  <path d="M1082 434L1112 464L1082 494" stroke="#06B6D4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="80" y="760" width="1440" height="56" rx="18" fill="#0F172A"/>
+  <text x="112" y="796" fill="#DBEAFE" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="650">
+    workflow:
+  </text>
+  <text x="236" y="796" fill="white" font-family="Inter, Arial, sans-serif" font-size="21">
+    market context → evidence → models → AI explanation → explicit uncertainty
+  </text>
 </svg>
