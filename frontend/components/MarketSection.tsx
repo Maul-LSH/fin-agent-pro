@@ -49,7 +49,9 @@ export function MarketSection({ market }: Props) {
   const [indices, setIndices] = useState<MarketIndex[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [attention, setAttention] = useState<AttentionSector[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [indicesLoading, setIndicesLoading] = useState(true);
+  const [sectorsLoading, setSectorsLoading] = useState(true);
+  const [attentionLoading, setAttentionLoading] = useState(true);
   const [detail, setDetail] = useState<MarketDetail | null>(null);
 
   useEffect(() => {
@@ -57,40 +59,58 @@ export function MarketSection({ market }: Props) {
 
     if (market === "hk") {
       const fetchHK = async () => {
-        setLoading(true);
+        setIndicesLoading(true);
         try {
           const m = await apiClient.getMarkets("hk");
           if (!cancelled) setIndices(m);
         } catch {
           if (!cancelled) setIndices([]);
         } finally {
-          if (!cancelled) setLoading(false);
+          if (!cancelled) setIndicesLoading(false);
         }
       };
       void fetchHK();
     } else {
       const fetchMarket = async () => {
-        setLoading(true);
-        try {
-          const [m, s, a] = await Promise.all([
-            apiClient.getMarkets(market),
-            apiClient.getSectors(market, "industry"),
-            apiClient.getAttention(market, "industry"),
-          ]);
-          if (!cancelled) {
-            setIndices(m);
-            setSectors(s);
-            setAttention(a);
-          }
-        } catch {
-          if (!cancelled) {
-            setIndices([]);
-            setSectors([]);
-            setAttention([]);
-          }
-        } finally {
-          if (!cancelled) setLoading(false);
-        }
+        setIndicesLoading(true);
+        setSectorsLoading(true);
+        setAttentionLoading(true);
+
+        void apiClient
+          .getMarkets(market)
+          .then((m) => {
+            if (!cancelled) setIndices(m);
+          })
+          .catch(() => {
+            if (!cancelled) setIndices([]);
+          })
+          .finally(() => {
+            if (!cancelled) setIndicesLoading(false);
+          });
+
+        void apiClient
+          .getSectors(market, "industry")
+          .then((s) => {
+            if (!cancelled) setSectors(s);
+          })
+          .catch(() => {
+            if (!cancelled) setSectors([]);
+          })
+          .finally(() => {
+            if (!cancelled) setSectorsLoading(false);
+          });
+
+        void apiClient
+          .getAttention(market, "industry")
+          .then((a) => {
+            if (!cancelled) setAttention(a);
+          })
+          .catch(() => {
+            if (!cancelled) setAttention([]);
+          })
+          .finally(() => {
+            if (!cancelled) setAttentionLoading(false);
+          });
       };
       void fetchMarket();
     }
@@ -102,7 +122,7 @@ export function MarketSection({ market }: Props) {
 
   // Detect if data source is unavailable (all index prices null)
   const dataUnavailable =
-    !loading &&
+    !indicesLoading &&
     indices.length > 0 &&
     indices.every((i) => i.price === null);
   const showAkShareBanner = dataUnavailable && (market === "cn" || market === "hk");
@@ -119,7 +139,7 @@ export function MarketSection({ market }: Props) {
 
         <MarketOverview
           data={indices}
-          loading={loading}
+          loading={indicesLoading}
           currencyPrefix={currencyPrefix}
           onSelect={(item) => setDetail({ kind: "index", item })}
         />
@@ -162,7 +182,7 @@ export function MarketSection({ market }: Props) {
 
       <MarketOverview
         data={indices}
-        loading={loading}
+        loading={indicesLoading}
         currencyPrefix={currencyPrefix}
         onSelect={(item) => setDetail({ kind: "index", item })}
       />
@@ -185,7 +205,7 @@ export function MarketSection({ market }: Props) {
 
             <AttentionQuadrant
               data={attention}
-              loading={loading}
+              loading={attentionLoading}
               onSelectSector={(item) => setDetail({ kind: "sector", item })}
             />
           </div>
@@ -203,7 +223,7 @@ export function MarketSection({ market }: Props) {
               </h3>
             </motion.div>
 
-            {loading ? (
+            {sectorsLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[...Array(8)].map((_, i) => (
                   <div
