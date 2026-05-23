@@ -144,6 +144,8 @@ export function MarketSection({ market }: Props) {
           onSelect={(item) => setDetail({ kind: "index", item })}
         />
 
+        <HeatmapBehaviorCard />
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -200,7 +202,13 @@ export function MarketSection({ market }: Props) {
               <h3 className="section-title text-slate-900 dark:text-slate-50">
                 {t("sectorHeatmapTitle")}
               </h3>
+              <p className="mt-3 text-lg font-semibold text-blue-600 dark:text-blue-400">
+                {t("heatmapBehaviorMantra")}
+              </p>
               <p className="section-subtitle mt-4">{t("sectorHeatmapSubtitle")}</p>
+              <p className="mx-auto mt-3 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                {t("heatmapBehaviorBody")}
+              </p>
             </motion.div>
 
             <AttentionQuadrant
@@ -273,6 +281,29 @@ export function MarketSection({ market }: Props) {
         onClose={() => setDetail(null)}
       />
     </div>
+  );
+}
+
+function HeatmapBehaviorCard() {
+  const t = useT();
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-100px" }}
+      transition={{ duration: 0.45 }}
+      className="rounded-3xl border border-blue-200/60 bg-blue-50/70 p-8 text-center dark:border-blue-900/60 dark:bg-blue-950/20"
+    >
+      <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-50">
+        {t("sectorHeatmapTitle")}
+      </h3>
+      <p className="mt-3 text-lg font-semibold text-blue-600 dark:text-blue-400">
+        {t("heatmapBehaviorMantra")}
+      </p>
+      <p className="mx-auto mt-3 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+        {t("heatmapBehaviorBody")}
+      </p>
+    </motion.div>
   );
 }
 

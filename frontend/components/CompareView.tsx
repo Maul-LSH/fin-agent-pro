@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -23,6 +23,23 @@ import { useT } from "@/lib/AppContext";
 import { ExportPDFButton } from "./ExportPDFButton";
 
 const MAX_COMPANIES = 4;
+const COMPARE_STORAGE_KEY = "fin-agent-compare-state";
+
+interface CompareStoredState {
+  tickerInput: string;
+  tickers: string[];
+  data: CompareResponse | null;
+}
+
+function loadCompareStoredState(): Partial<CompareStoredState> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(COMPARE_STORAGE_KEY);
+    return saved ? (JSON.parse(saved) as Partial<CompareStoredState>) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface MetricRow {
   key: string;
@@ -129,24 +146,36 @@ interface Props {
 
 export function CompareView({ onClose }: Props) {
   const t = useT();
-  const [tickerInput, setTickerInput] = useState("");
-  const [tickers, setTickers] = useState<string[]>([]);
-  const [data, setData] = useState<CompareResponse | null>(null);
+  const [storedState] = useState(loadCompareStoredState);
+  const [tickerInput, setTickerInput] = useState(storedState?.tickerInput ?? "");
+  const [tickers, setTickers] = useState<string[]>(
+    Array.isArray(storedState?.tickers) ? storedState.tickers : []
+  );
+  const [data, setData] = useState<CompareResponse | null>(storedState?.data ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        COMPARE_STORAGE_KEY,
+        JSON.stringify({ tickerInput, tickers, data })
+      );
+    } catch {}
+  }, [tickerInput, tickers, data]);
+
   const addTicker = () => {
-    const t = tickerInput.trim().toUpperCase();
-    if (!t) return;
-    if (tickers.includes(t)) {
-      setError("Already added");
+    const nextTicker = tickerInput.trim().toUpperCase();
+    if (!nextTicker) return;
+    if (tickers.includes(nextTicker)) {
+      setError(t("compareAlready"));
       return;
     }
     if (tickers.length >= MAX_COMPANIES) {
-      setError(`Max ${MAX_COMPANIES} companies`);
+      setError(t("compareMax4"));
       return;
     }
-    setTickers([...tickers, t]);
+    setTickers([...tickers, nextTicker]);
     setTickerInput("");
     setError(null);
   };
@@ -158,7 +187,7 @@ export function CompareView({ onClose }: Props) {
 
   const runCompare = async () => {
     if (tickers.length < 2) {
-      setError("Need at least 2 companies");
+      setError(t("compareNeed2"));
       return;
     }
     setLoading(true);
@@ -167,7 +196,7 @@ export function CompareView({ onClose }: Props) {
       const res = await apiClient.compare({ tickers });
       setData(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to compare");
+      setError(e instanceof Error ? e.message : t("compareFailed"));
     } finally {
       setLoading(false);
     }
@@ -184,10 +213,10 @@ export function CompareView({ onClose }: Props) {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div>
             <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              📊 Compare Companies
+              📊 {t("compareTitle")}
             </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Add 2-4 tickers to compare side-by-side (Apple-style)
+              {t("compareHeaderSubtitle")}
             </p>
           </div>
           {onClose && (
@@ -226,7 +255,7 @@ export function CompareView({ onClose }: Props) {
               value={tickerInput}
               onChange={(e) => setTickerInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTicker()}
-              placeholder="e.g. AAPL, MSFT, GOOGL, 600519..."
+              placeholder={t("compareTickerPlaceholder")}
               disabled={tickers.length >= MAX_COMPANIES}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
             />
@@ -237,7 +266,7 @@ export function CompareView({ onClose }: Props) {
             className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 rounded-xl text-sm font-medium flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
-            Add
+            {t("compareAdd")}
           </button>
           <button
             onClick={runCompare}
@@ -245,7 +274,7 @@ export function CompareView({ onClose }: Props) {
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl text-sm font-semibold disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Compare
+            {t("compareRun")}
           </button>
         </div>
 
@@ -286,7 +315,7 @@ export function CompareView({ onClose }: Props) {
               <ExportPDFButton
                 targetId="compare-content"
                 filename={`compare-${tickers.join("-")}.pdf`}
-                label="Export PDF"
+                label={t("exportPdf")}
               />
             </div>
 
@@ -296,7 +325,7 @@ export function CompareView({ onClose }: Props) {
               style={{ gridTemplateColumns: `200px repeat(${numCols}, minmax(0, 1fr))` }}
             >
               <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 self-center">
-                Risk Score
+                {t("compareRiskScore")}
               </div>
               {data.companies.map((c) => {
                 const score = c.risk.overall_score ?? 0;
@@ -314,7 +343,11 @@ export function CompareView({ onClose }: Props) {
                     <div className="text-4xl font-bold tabular-nums">{score}</div>
                     <div className="text-xs opacity-90 mt-1">/100</div>
                     <div className="text-xs font-medium mt-2 capitalize">
-                      {level} risk
+                      {level === "high"
+                        ? t("riskHigh")
+                        : level === "medium"
+                          ? t("riskMedium")
+                          : t("riskLow")}
                     </div>
                   </div>
                 );
@@ -324,8 +357,8 @@ export function CompareView({ onClose }: Props) {
             {/* 五维度雷达数据（用横条对比，比叠加雷达图清晰）*/}
             <CompareGroup
               icon={<Target className="w-5 h-5" />}
-              label="5-Dimension Health"
-              hint="Higher is healthier"
+              label={t("compareDimensions")}
+              hint={t("compareDimHint")}
             >
               <div className="space-y-2">
                 {RISK_DIMENSIONS.map((dim) => (
@@ -335,7 +368,7 @@ export function CompareView({ onClose }: Props) {
                     style={{ gridTemplateColumns: `200px repeat(${numCols}, minmax(0, 1fr))` }}
                   >
                     <div className="text-sm text-slate-700 dark:text-slate-300">
-                      {dim.label}
+                      {t(`dim${dim.key === "cash_flow" ? "CashFlow" : dim.key === "revenue_quality" ? "RevenueQuality" : dim.key.charAt(0).toUpperCase() + dim.key.slice(1)}`)}
                     </div>
                     {data.companies.map((c) => {
                       const score =
@@ -368,7 +401,19 @@ export function CompareView({ onClose }: Props) {
 
             {/* 各财务模块 */}
             {METRIC_GROUPS.map((group) => (
-              <CompareGroup key={group.id} icon={group.icon} label={group.label}>
+              <CompareGroup
+                key={group.id}
+                icon={group.icon}
+                label={
+                  group.id === "overview"
+                    ? t("compareGroupOverview")
+                    : group.id === "profitability"
+                      ? t("compareGroupProfit")
+                      : group.id === "balance"
+                        ? t("compareGroupBalance")
+                        : t("compareGroupCashflow")
+                }
+              >
                 <div className="space-y-1">
                   {group.rows.map((row) => {
                     const values = data.companies.map((c) =>
@@ -417,7 +462,7 @@ export function CompareView({ onClose }: Props) {
             ))}
 
             <p className="text-xs text-slate-400 dark:text-slate-500 text-center pt-4 border-t border-slate-100 dark:border-slate-800">
-              ★ = Best value among compared · Period: FY {data.period}
+              ★ = {t("compareBestValue")} · {t("comparePeriod")}: FY {data.period}
             </p>
           </motion.div>
         )}

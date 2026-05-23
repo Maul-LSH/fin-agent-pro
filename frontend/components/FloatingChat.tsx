@@ -23,24 +23,28 @@ interface Props {
   onOpenSettings: () => void;
 }
 
+function loadSavedConfig() {
+  if (typeof window === "undefined") {
+    return { apiKey: "", provider: "Claude (Anthropic)" };
+  }
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const cfg = JSON.parse(saved);
+      return {
+        apiKey: cfg.apiKey || "",
+        provider: cfg.provider || "Claude (Anthropic)",
+      };
+    }
+  } catch {}
+  return { apiKey: "", provider: "Claude (Anthropic)" };
+}
+
 export function FloatingChat({ onOpenSettings }: Props) {
   const t = useT();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [apiKey, setApiKey] = useState("");
-  const [provider, setProvider] = useState("Claude (Anthropic)");
-
-  // Load credentials whenever drawer opens
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const cfg = JSON.parse(saved);
-        if (cfg.apiKey) setApiKey(cfg.apiKey);
-        if (cfg.provider) setProvider(cfg.provider);
-      }
-    } catch {}
-  }, [open]);
+  const [config] = useState(loadSavedConfig);
 
   // Listen for global open event (from home page CTA)
   useEffect(() => {
@@ -125,8 +129,8 @@ export function FloatingChat({ onOpenSettings }: Props) {
 
               <div className="p-5">
                 <AnalysisChat
-                  apiKey={apiKey}
-                  provider={provider}
+                  apiKey={config.apiKey}
+                  provider={config.provider}
                   onOpenSettings={onOpenSettings}
                 />
               </div>

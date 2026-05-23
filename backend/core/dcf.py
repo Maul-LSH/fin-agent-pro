@@ -79,6 +79,108 @@ def _normalized_fcf(history: list[dict]) -> Optional[float]:
     return sum(positive) / len(positive)
 
 
+def _calc_margin_trend(financials) -> dict:
+    trend = {"gross_margin": [], "operating_margin": []}
+    if financials is None or financials.empty:
+        return trend
+
+    for col in list(financials.columns)[:4]:
+        revenue = _get_row_value(financials, col, ["Total Revenue", "Revenue"])
+        if not revenue:
+            continue
+        gross_profit = _get_row_value(financials, col, ["Gross Profit"])
+        operating_income = _get_row_value(
+            financials,
+            col,
+            ["Operating Income", "Operating Income or Loss"],
+        )
+        year = getattr(col, "year", None) or str(col)[:4]
+        if gross_profit is not None:
+            trend["gross_margin"].append({
+                "year": str(year),
+                "value": safe_round(gross_profit / revenue, 4),
+            })
+        if operating_income is not None:
+            trend["operating_margin"].append({
+                "year": str(year),
+                "value": safe_round(operating_income / revenue, 4),
+            })
+    return trend
+
+
+def _analyst_entries(stock) -> list[dict]:
+    try:
+        table = retry(lambda: stock.upgrades_downgrades, retries=1)
+    except Exception:
+        table = None
+    if table is None or getattr(table, "empty", True):
+        return []
+
+    entries = []
+    try:
+        rows = table.reset_index().head(12)
+        for _, row in rows.iterrows():
+            date_value = row.get("Date") or row.get("index")
+            date = str(date_value)[:10] if date_value is not None else None
+            entries.append({
+                "date": date,
+                "firm": str(row.get("Firm")) if row.get("Firm") is not None else None,
+                "to_grade": str(row.get("ToGrade")) if row.get("ToGrade") is not None else None,
+                "from_grade": str(row.get("FromGrade")) if row.get("FromGrade") is not None else None,
+                "action": str(row.get("Action")) if row.get("Action") is not None else None,
+            })
+    except Exception:
+        return []
+    return [entry for entry in entries if entry.get("firm")]
+
+
+def _valuation_context(info: dict, financials, implied_growth_rate: Optional[float], analyst_entries: list[dict]) -> dict:
+    revenue_growth = _clean_num(info.get("revenueGrowth"))
+    earnings_growth = _clean_num(info.get("earningsGrowth"))
+    beta = _clean_num(info.get("beta"))
+    sector_text = f"{info.get('sector') or ''} {info.get('industry') or ''}".lower()
+    is_growth_tech = any(word in sector_text for word in ["technology", "semiconductor", "software"])
+    observed_growth = earnings_growth if earnings_growth is not None else revenue_growth
+    high_growth = bool(
+        (observed_growth is not None and observed_growth >= 0.25)
+        or (revenue_growth is not None and revenue_growth >= 0.25)
+        or (is_growth_tech and observed_growth is not None and observed_growth >= 0.20)
+        or (beta is not None and beta >= 1.6)
+    )
+
+    ev_to_sales = _clean_num(info.get("enterpriseToRevenue"))
+    ev_to_revenue_growth = None
+    if ev_to_sales is not None and revenue_growth and revenue_growth > 0:
+        ev_to_revenue_growth = ev_to_sales / (revenue_growth * 100)
+
+    return {
+        "forward_pe": safe_round(_clean_num(info.get("forwardPE")), 2),
+        "peg_ratio": safe_round(
+            _clean_num(info.get("pegRatio")) or _clean_num(info.get("trailingPegRatio")),
+            2,
+        ),
+        "ev_to_sales": safe_round(ev_to_sales, 2),
+        "ev_to_revenue_growth": safe_round(ev_to_revenue_growth, 2),
+        "revenue_growth": safe_round(revenue_growth, 4),
+        "earnings_growth": safe_round(earnings_growth, 4),
+        "gross_margin": safe_round(_clean_num(info.get("grossMargins")), 4),
+        "operating_margin": safe_round(_clean_num(info.get("operatingMargins")), 4),
+        "margin_trend": _calc_margin_trend(financials),
+        "implied_growth_rate": implied_growth_rate,
+        "analyst_target": {
+            "mean_price": safe_round(_clean_num(info.get("targetMeanPrice")), 2),
+            "median_price": safe_round(_clean_num(info.get("targetMedianPrice")), 2),
+            "low_price": safe_round(_clean_num(info.get("targetLowPrice")), 2),
+            "high_price": safe_round(_clean_num(info.get("targetHighPrice")), 2),
+            "recommendation": info.get("recommendationKey"),
+            "opinion_count": int(_clean_num(info.get("numberOfAnalystOpinions")) or 0) or None,
+            "entries": analyst_entries,
+        },
+        "is_high_growth": high_growth,
+        "dcf_stability": "unstable" if high_growth else "moderate",
+    }
+
+
 def _get_risk_free_rate() -> tuple[float, str]:
     try:
         tnx = yf.Ticker("^TNX")
@@ -125,8 +227,9 @@ def calculate_wacc(ticker: str, stock=None, info: Optional[dict] = None) -> dict
     info = info or retry(lambda: stock.info, retries=2) or {}
 
     rf, rf_source = _get_risk_free_rate()
-    beta = _clean_num(info.get("beta")) or 1.0
-    beta = _clamp(beta, 0.6, 2.2)
+    raw_beta = _clean_num(info.get("beta")) or 1.0
+    raw_beta = _clamp(raw_beta, 0.6, 2.5)
+    beta = _clamp(0.67 * raw_beta + 0.33 * 1.0, 0.6, 2.2)
     market_premium = DEFAULT_EQUITY_RISK_PREMIUM
     cost_of_equity = rf + beta * market_premium
 
@@ -144,14 +247,16 @@ def calculate_wacc(ticker: str, stock=None, info: Optional[dict] = None) -> dict
     equity_weight = market_cap / capital if capital > 0 else 0.9
     debt_weight = total_debt / capital if capital > 0 else 0.1
     raw_wacc = equity_weight * cost_of_equity + debt_weight * after_tax_cost_of_debt
-    suggested_wacc = _clamp(raw_wacc, 0.06, 0.15)
+    suggested_wacc = _clamp(raw_wacc, 0.06, 0.20)
 
     return {
         "discount_rate": suggested_wacc,
         "raw_wacc": raw_wacc,
         "risk_free_rate": rf,
         "risk_free_source": rf_source,
+        "raw_beta": raw_beta,
         "beta": beta,
+        "beta_adjustment": "Blume",
         "equity_risk_premium": market_premium,
         "cost_of_equity": cost_of_equity,
         "debt_spread": debt_spread,
@@ -191,7 +296,11 @@ def suggested_dcf_assumptions(ticker: str) -> dict:
         wacc = calculate_wacc(ticker, stock=stock, info=info)
         result["discount_rate"] = safe_round(wacc["discount_rate"], 4)
         result["wacc_breakdown"] = wacc
-        result["growth_rate"] = _clamp((_clean_num(info.get("earningsGrowth")) or _clean_num(info.get("revenueGrowth")) or 0.05), -0.05, 0.15)
+        observed_growth = _clean_num(info.get("earningsGrowth")) or _clean_num(info.get("revenueGrowth")) or 0.05
+        sector_text = f"{info.get('sector') or ''} {info.get('industry') or ''}".lower()
+        is_growth_tech = any(word in sector_text for word in ["technology", "semiconductor", "software"]) and observed_growth >= 0.20
+        growth_cap = 0.45 if is_growth_tech else 0.25
+        result["growth_rate"] = _clamp(observed_growth, -0.05, growth_cap)
     except Exception as e:
         result["warning"] = f"Using fallback assumptions because live WACC lookup failed: {e}"
     return result
@@ -251,6 +360,7 @@ def calc_dcf(
         "equity_value": None,
         "terminal_value_pct": None,
         "implied_growth_rate": None,
+        "valuation_context": None,
         "wacc_breakdown": None,
         "warning": None,
         "error": None,
@@ -269,6 +379,7 @@ def calc_dcf(
         stock = yf.Ticker(ticker)
         info = retry(lambda: stock.info, retries=2) or {}
         cashflow = retry(lambda: stock.cashflow, retries=2)
+        financials = retry(lambda: stock.financials, retries=2)
         special = _is_special_industry(info.get("sector"), info.get("industry"))
         if special:
             result["warning"] = special
@@ -371,6 +482,12 @@ def calc_dcf(
                     total_years=total_years,
                     stage1_years=stage1_years,
                 )
+        result["valuation_context"] = _valuation_context(
+            info,
+            financials,
+            result["implied_growth_rate"],
+            _analyst_entries(stock),
+        )
 
     except Exception as e:
         result["error"] = str(e)
@@ -412,7 +529,7 @@ def _solve_implied_growth(
     stage1_years: int,
 ) -> Optional[float]:
     target_ev = market_equity_value + net_debt
-    low, high = -0.15, 0.30
+    low, high = -0.15, 0.60
     for _ in range(60):
         mid = (low + high) / 2
         ev = _project_enterprise_value(

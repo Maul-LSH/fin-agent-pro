@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator,
@@ -16,6 +16,8 @@ import {
   Search,
   Info,
   Sparkles,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import {
   BarChart,
@@ -32,21 +34,97 @@ import {
   type DCFAssumptions,
   type DCFResult,
   type SensitivityResult,
+  type ValuationContext,
   type WaccBreakdown,
 } from "@/lib/api";
+import { useT } from "@/lib/AppContext";
+
+const DCF_STORAGE_KEY = "fin-agent-dcf-state";
+const DCF_CHANGE_EVENT = "fin-agent-dcf-state-change";
+let cachedDcfRaw: string | null = null;
+let cachedDcfValue: Partial<DCFStoredState> | null = null;
+
+interface DCFStoredState {
+  ticker: string;
+  discountRate: number;
+  growthRate: number;
+  terminalGrowth: number;
+  result: DCFResult | null;
+  sensitivity: SensitivityResult | null;
+}
+
+function loadDCFStoredState(): Partial<DCFStoredState> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(DCF_STORAGE_KEY);
+    if (saved === cachedDcfRaw) return cachedDcfValue;
+    cachedDcfRaw = saved;
+    cachedDcfValue = saved ? (JSON.parse(saved) as Partial<DCFStoredState>) : null;
+    return cachedDcfValue;
+  } catch {
+    return null;
+  }
+}
+
+function subscribeToDcfState(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(DCF_CHANGE_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(DCF_CHANGE_EVENT, onStoreChange);
+  };
+}
+
+function translateDcfWarning(warning: string, t: ReturnType<typeof useT>) {
+  if (warning.includes("Banks and financial companies")) return t("dcfBankWarning");
+  if (warning.includes("REITs")) return t("dcfReitWarning");
+  return warning;
+}
 
 export function DCFCalculator() {
-  const [ticker, setTicker] = useState("AAPL");
-  const [discountRate, setDiscountRate] = useState(10);  // 百分比
-  const [growthRate, setGrowthRate] = useState(5);
-  const [terminalGrowth, setTerminalGrowth] = useState(2.5);
+  const t = useT();
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  const storedState = useSyncExternalStore(subscribeToDcfState, loadDCFStoredState, () => null);
+  const [tickerOverride, setTickerOverride] = useState<string | undefined>();
+  const [discountRateOverride, setDiscountRateOverride] = useState<number | undefined>();
+  const [growthRateOverride, setGrowthRateOverride] = useState<number | undefined>();
+  const [terminalGrowthOverride, setTerminalGrowthOverride] = useState<number | undefined>();
+  const [resultOverride, setResultOverride] = useState<DCFResult | null | undefined>();
+  const [sensitivityOverride, setSensitivityOverride] = useState<SensitivityResult | null | undefined>();
+
+  const ticker = tickerOverride ?? storedState?.ticker ?? "AAPL";
+  const discountRate = discountRateOverride ?? storedState?.discountRate ?? 10;
+  const growthRate = growthRateOverride ?? storedState?.growthRate ?? 5;
+  const terminalGrowth = terminalGrowthOverride ?? storedState?.terminalGrowth ?? 2.5;
+  const result = resultOverride !== undefined ? resultOverride : storedState?.result ?? null;
+  const sensitivity =
+    sensitivityOverride !== undefined ? sensitivityOverride : storedState?.sensitivity ?? null;
 
   const [assumptions, setAssumptions] = useState<DCFAssumptions | null>(null);
   const [assumptionsLoading, setAssumptionsLoading] = useState(false);
-  const [result, setResult] = useState<DCFResult | null>(null);
-  const [sensitivity, setSensitivity] = useState<SensitivityResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const skipNextAssumptionApplyRef = useRef(false);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const state: DCFStoredState = {
+      ticker,
+      discountRate,
+      growthRate,
+      terminalGrowth,
+      result,
+      sensitivity,
+    };
+    try {
+      localStorage.setItem(DCF_STORAGE_KEY, JSON.stringify(state));
+      window.dispatchEvent(new Event(DCF_CHANGE_EVENT));
+    } catch {}
+  }, [ticker, discountRate, growthRate, terminalGrowth, result, sensitivity, hydrated]);
 
   useEffect(() => {
     const normalizedTicker = ticker.trim().toUpperCase();
@@ -58,9 +136,17 @@ export function DCFCalculator() {
         const next = await apiClient.dcfAssumptions(normalizedTicker);
         setAssumptions(next);
         if (!next.error) {
-          setDiscountRate(Number((next.discount_rate * 100).toFixed(1)));
-          setGrowthRate(Number((next.growth_rate * 100).toFixed(1)));
-          setTerminalGrowth(Number((next.terminal_growth * 100).toFixed(1)));
+          const restoredTicker = storedState?.ticker?.trim().toUpperCase();
+          if (
+            skipNextAssumptionApplyRef.current ||
+            (!tickerOverride && restoredTicker === normalizedTicker)
+          ) {
+            skipNextAssumptionApplyRef.current = false;
+          } else {
+            setDiscountRateOverride(Number((next.discount_rate * 100).toFixed(1)));
+            setGrowthRateOverride(Number((next.growth_rate * 100).toFixed(1)));
+            setTerminalGrowthOverride(Number((next.terminal_growth * 100).toFixed(1)));
+          }
         }
       } catch {
         setAssumptions(null);
@@ -70,14 +156,14 @@ export function DCFCalculator() {
     }, 500);
 
     return () => window.clearTimeout(timer);
-  }, [ticker]);
+  }, [ticker, storedState?.ticker, tickerOverride]);
 
   const runDCF = async () => {
     if (!ticker.trim()) return;
     setLoading(true);
     setError(null);
-    setResult(null);
-    setSensitivity(null);
+    setResultOverride(null);
+    setSensitivityOverride(null);
 
     try {
       const params = {
@@ -96,8 +182,8 @@ export function DCFCalculator() {
       if (dcf.error) {
         setError(dcf.error);
       } else {
-        setResult(dcf);
-        setSensitivity(sens);
+        setResultOverride(dcf);
+        setSensitivityOverride(sens);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "DCF calculation failed");
@@ -112,11 +198,11 @@ export function DCFCalculator() {
         <div className="flex items-center gap-2 mb-1">
           <Calculator className="w-6 h-6 text-blue-600 dark:text-blue-400" />
           <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-            🧮 Model Builder · DCF Valuation
+            🧮 {t("dcfHeaderTitle")}
           </h3>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Two-stage DCF valuation with WACC build-up, net debt adjustment, and implied growth
+          {t("dcfSubtitle")}
         </p>
       </div>
 
@@ -124,15 +210,15 @@ export function DCFCalculator() {
       <div className="p-6 space-y-4 bg-slate-50/50 dark:bg-slate-800/30">
         <div>
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-            Ticker
+            {t("dcfTicker")}
           </label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               value={ticker}
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
+              onChange={(e) => setTickerOverride(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === "Enter" && runDCF()}
-              placeholder="AAPL, MSFT, TSLA..."
+              placeholder={t("dcfTickerPlaceholder")}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
             />
           </div>
@@ -146,52 +232,77 @@ export function DCFCalculator() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <SliderInput
-            label="Discount Rate (WACC)"
+            label={t("dcfWacc")}
             value={discountRate}
             min={6}
-            max={15}
+            max={20}
             step={0.5}
             unit="%"
             hint={
               assumptionsLoading
-                ? "Calculating suggested WACC..."
+                ? t("dcfWaccLoading")
                 : assumptions?.wacc_breakdown
-                  ? "Suggested by CAPM + capital structure"
-                  : "Higher = more conservative"
+                  ? t("dcfWaccSuggested")
+                  : t("dcfWaccHint")
             }
             tooltip={
               assumptions?.wacc_breakdown ? (
                 <WaccTooltip breakdown={assumptions.wacc_breakdown} />
               ) : undefined
             }
-            onChange={setDiscountRate}
+            onChange={setDiscountRateOverride}
           />
           <SliderInput
-            label="Stage 1 FCF Growth (5y)"
+            label={t("dcfGrowth")}
             value={growthRate}
             min={-5}
-            max={25}
+            max={50}
             step={0.5}
             unit="%"
-            hint="Annual FCF growth assumption"
-            onChange={setGrowthRate}
+            hint={t("dcfGrowthHint")}
+            tooltip={
+              <AssumptionTooltip
+                title={t("dcfGrowthTooltipTitle")}
+                body={t("dcfGrowthTooltipBody")}
+                caution={t("dcfGrowthTooltipCaution")}
+              />
+            }
+            onChange={setGrowthRateOverride}
           />
           <SliderInput
-            label="Terminal Growth"
+            label={t("dcfTerminal")}
             value={terminalGrowth}
             min={0}
             max={4}
             step={0.1}
             unit="%"
-            hint="Long-term GDP-like growth"
-            onChange={setTerminalGrowth}
+            hint={t("dcfTerminalHint")}
+            tooltip={
+              <AssumptionTooltip
+                title={t("dcfTerminalTooltipTitle")}
+                body={t("dcfTerminalTooltipBody")}
+                caution={t("dcfTerminalTooltipCaution")}
+              />
+            }
+            onChange={setTerminalGrowthOverride}
           />
         </div>
+
+        {assumptions?.wacc_breakdown &&
+          (assumptions.wacc_breakdown.beta >= 1.4 || growthRate >= 25) && (
+            <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-sm flex gap-2">
+              <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                <span className="font-semibold">{t("dcfGrowthProfile")}</span>{" "}
+                {t("dcfGrowthProfileBody")}
+              </span>
+            </div>
+          )}
 
         {assumptions?.warning && (
           <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-sm flex gap-2">
             <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{assumptions.warning}</span>
+            <span>{translateDcfWarning(assumptions.warning, t)}</span>
           </div>
         )}
 
@@ -205,7 +316,7 @@ export function DCFCalculator() {
           ) : (
             <Calculator className="w-5 h-5" />
           )}
-          {loading ? "Calculating..." : "Run DCF Valuation"}
+          {loading ? t("dcfRunning") : t("dcfRun")}
         </button>
 
         {error && (
@@ -228,14 +339,22 @@ export function DCFCalculator() {
 
             {result.warning && (
               <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-sm">
-                {result.warning}
+                {translateDcfWarning(result.warning, t)}
               </div>
+            )}
+
+            {result.valuation_context && (
+              <ValuationContextCard
+                context={result.valuation_context}
+                intrinsicValue={result.intrinsic_value_per_share}
+                currentPrice={result.current_price}
+              />
             )}
 
             {/* 10 年 FCF 投影柱状图 */}
             <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-5">
               <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 text-sm">
-                10-Year Two-Stage FCF Projection (Present Value, $B)
+                {t("dcfFcfProjection")}
               </h4>
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
@@ -245,7 +364,7 @@ export function DCFCalculator() {
                       dataKey="year"
                       tick={{ fill: "#64748b", fontSize: 11 }}
                       label={{
-                        value: "Year",
+                        value: t("dcfYear"),
                         position: "bottom",
                         offset: -5,
                         style: { fontSize: 11, fill: "#94a3b8" },
@@ -261,8 +380,8 @@ export function DCFCalculator() {
                         fontSize: "12px",
                       }}
                     />
-                    <Bar dataKey="fcf" fill="#94a3b8" name="FCF (Future)" />
-                    <Bar dataKey="pv" fill="#3b82f6" name="Present Value" />
+                    <Bar dataKey="fcf" fill="#94a3b8" name={t("dcfFutureFcf")} />
+                    <Bar dataKey="pv" fill="#3b82f6" name={t("dcfPresentValue")} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -273,6 +392,330 @@ export function DCFCalculator() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function formatMultiple(value: number | null) {
+  if (value === null || value === undefined) return "—";
+  return `${value.toFixed(2)}x`;
+}
+
+function formatPercent(value: number | null) {
+  if (value === null || value === undefined) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatPrice(value: number | null) {
+  if (value === null || value === undefined) return "—";
+  return `$${value.toFixed(2)}`;
+}
+
+function normalizeRecommendation(value: string | null) {
+  if (!value) return "—";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function ValuationContextCard({
+  context,
+  intrinsicValue,
+  currentPrice,
+}: {
+  context: ValuationContext;
+  intrinsicValue: number | null;
+  currentPrice: number | null;
+}) {
+  const t = useT();
+  const [analystDrawerOpen, setAnalystDrawerOpen] = useState(false);
+  const analyst = context.analyst_target;
+  const analystTarget =
+    analyst?.median_price ?? analyst?.mean_price;
+  const hasAnalystTarget = analystTarget !== null && analystTarget !== undefined;
+  const impliedGrowth =
+    context.implied_growth_rate === null
+      ? "—"
+      : `${(context.implied_growth_rate * 100).toFixed(1)}${
+          context.implied_growth_rate >= 0.5995 ? "%+" : "%"
+        }`;
+  const metrics = [
+    { label: t("dcfForwardPe"), value: formatMultiple(context.forward_pe) },
+    { label: t("dcfPeg"), value: formatMultiple(context.peg_ratio) },
+    { label: t("dcfEvSales"), value: formatMultiple(context.ev_to_sales) },
+    { label: t("dcfEvRevenueGrowth"), value: formatMultiple(context.ev_to_revenue_growth) },
+    { label: t("dcfRevenueGrowth"), value: formatPercent(context.revenue_growth) },
+    { label: t("dcfEarningsGrowth"), value: formatPercent(context.earnings_growth) },
+    { label: t("dcfGrossMargin"), value: formatPercent(context.gross_margin) },
+    { label: t("dcfOperatingMargin"), value: formatPercent(context.operating_margin) },
+    { label: t("dcfMarketImplied"), value: impliedGrowth },
+    {
+      label: t("dcfStability"),
+      value: context.dcf_stability === "unstable" ? t("dcfUnstable") : t("dcfModerate"),
+    },
+  ];
+
+  const trendPoints: { year: string; gross: number | null; operating: number | null }[] = [
+    ...context.margin_trend.gross_margin.map((point) => ({
+      year: point.year,
+      gross: point.value,
+      operating: null,
+    })),
+  ];
+  context.margin_trend.operating_margin.forEach((point) => {
+    const existing = trendPoints.find((item) => item.year === point.year);
+    if (existing) {
+      existing.operating = point.value;
+    } else {
+      trendPoints.push({ year: point.year, gross: null, operating: point.value });
+    }
+  });
+  const sortedTrend = trendPoints.sort((a, b) => a.year.localeCompare(b.year));
+
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+      {hasAnalystTarget && (
+        <div className="mb-5 rounded-2xl bg-slate-950 text-white p-5">
+          <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+            <div>
+              <h4 className="font-bold">{t("dcfThreeAnswersTitle")}</h4>
+              <p className="mt-1 text-sm text-slate-300 max-w-3xl">
+                {t("dcfDisagreementSignal")}
+              </p>
+            </div>
+            {analyst?.opinion_count && (
+              <div className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200">
+                {t("dcfAnalystCount", { n: analyst.opinion_count })}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <AnswerTile label={t("dcfOurDcfAnswer")} value={formatPrice(intrinsicValue)} />
+            <AnswerTile label={t("dcfMarketAnswer")} value={formatPrice(currentPrice)} />
+            <button
+              type="button"
+              onClick={() => setAnalystDrawerOpen(true)}
+              className="rounded-xl bg-white/10 p-4 text-left hover:bg-white/15 transition-colors"
+            >
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                {t("dcfAnalystAnswer")}
+              </div>
+              <div className="mt-2 text-3xl font-bold tabular-nums">
+                {formatPrice(analystTarget)}
+              </div>
+              <div className="mt-1 text-xs text-blue-200">
+                {t("dcfViewAnalysts")}
+              </div>
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="rounded-xl bg-white/10 p-3">
+              <div className="text-xs text-slate-400">{t("dcfTargetRange")}</div>
+              <div className="mt-1 font-semibold tabular-nums">
+                {formatPrice(analyst?.low_price ?? null)} -{" "}
+                {formatPrice(analyst?.high_price ?? null)}
+              </div>
+            </div>
+            <div className="rounded-xl bg-white/10 p-3">
+              <div className="text-xs text-slate-400">{t("dcfRecommendation")}</div>
+              <div className="mt-1 font-semibold">
+                {normalizeRecommendation(analyst?.recommendation ?? null)}
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs leading-5 text-slate-400">
+            {t("dcfAnalystCaveat")}
+          </p>
+          <AnalystCoverageDrawer
+            open={analystDrawerOpen}
+            analyst={analyst}
+            onClose={() => setAnalystDrawerOpen(false)}
+          />
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <div>
+          <h4 className="font-bold text-slate-900 dark:text-slate-100">
+            {t("dcfContextTitle")}
+          </h4>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 max-w-3xl">
+            {t("dcfContextSubtitle")}
+          </p>
+        </div>
+        <div
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            context.dcf_stability === "unstable"
+              ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
+              : "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+          }`}
+        >
+          {context.dcf_stability === "unstable" ? t("dcfUnstable") : t("dcfModerate")}
+        </div>
+      </div>
+
+      {context.is_high_growth && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200 flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{t("dcfHighGrowthWarning")}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {metrics.map((metric) => (
+          <div
+            key={metric.label}
+            className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3"
+          >
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              {metric.label}
+            </div>
+            <div className="mt-1 text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
+              {metric.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {sortedTrend.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {t("dcfMarginTrend")}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {sortedTrend.map((point) => (
+              <div
+                key={point.year}
+                className="rounded-xl border border-slate-100 dark:border-slate-800 p-3 text-sm"
+              >
+                <div className="font-semibold text-slate-900 dark:text-slate-100">
+                  {point.year}
+                </div>
+                <div className="mt-2 flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>{t("dcfGrossMargin")}</span>
+                  <span className="font-medium tabular-nums text-slate-900 dark:text-slate-100">
+                    {formatPercent(point.gross)}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>{t("dcfOperatingMargin")}</span>
+                  <span className="font-medium tabular-nums text-slate-900 dark:text-slate-100">
+                    {formatPercent(point.operating)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        {t("dcfContextNote")}
+      </p>
+    </div>
+  );
+}
+
+function AnalystCoverageDrawer({
+  open,
+  analyst,
+  onClose,
+}: {
+  open: boolean;
+  analyst: NonNullable<ValuationContext["analyst_target"]> | undefined;
+  onClose: () => void;
+}) {
+  const t = useT();
+  if (!open || !analyst) return null;
+  const entries = analyst.entries ?? [];
+
+  return (
+    <div className="fixed inset-0 z-[80]">
+      <button
+        type="button"
+        aria-label="Close analyst coverage"
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
+      />
+      <aside className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-slate-800 bg-slate-950 p-6 text-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-2xl font-bold">{t("dcfAnalystDrawerTitle")}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              {t("dcfAnalystDrawerSubtitle")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <AnswerTile label={t("dcfAnalystAnswer")} value={formatPrice(analyst.median_price ?? analyst.mean_price)} />
+          <AnswerTile
+            label={t("dcfAnalystCount", { n: analyst.opinion_count ?? 0 })}
+            value={normalizeRecommendation(analyst.recommendation)}
+          />
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {entries.length > 0 ? (
+            entries.map((entry, index) => (
+              <div key={`${entry.firm}-${entry.date}-${index}`} className="rounded-xl bg-white/10 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">{entry.firm ?? "—"}</div>
+                    <div className="mt-1 text-xs text-slate-400">{entry.date ?? "—"}</div>
+                  </div>
+                  <div className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-200">
+                    {entry.action ?? "—"}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <div className="text-xs text-slate-500">{t("dcfAnalystToGrade")}</div>
+                    <div className="mt-1 font-medium">{entry.to_grade ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">{t("dcfAnalystFromGrade")}</div>
+                    <div className="mt-1 font-medium">{entry.from_grade ?? "—"}</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-xl bg-white/10 p-4 text-sm text-slate-300">
+              {t("dcfNoAnalystEntries")}
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function AnswerTile({
+  label,
+  value,
+  sublabel,
+}: {
+  label: string;
+  value: string;
+  sublabel?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white/10 p-4">
+      <div className="text-xs uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-2 text-3xl font-bold tabular-nums">{value}</div>
+      {sublabel && <div className="mt-1 text-xs text-slate-400">{sublabel}</div>}
     </div>
   );
 }
@@ -337,28 +780,32 @@ function SliderInput({
 }
 
 function WaccTooltip({ breakdown }: { breakdown: WaccBreakdown }) {
+  const t = useT();
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
 
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3 shadow-xl text-slate-700 dark:text-slate-200">
       <div className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
-        Suggested WACC: {pct(breakdown.discount_rate)}
+        {t("dcfSuggestedWacc")}: {pct(breakdown.discount_rate)}
       </div>
       <div className="space-y-1">
-        <TooltipRow label="Risk-free rate (10Y T)" value={pct(breakdown.risk_free_rate)} />
-        <TooltipRow label="Beta" value={breakdown.beta.toFixed(2)} />
-        <TooltipRow label="Equity risk premium" value={pct(breakdown.equity_risk_premium)} />
-      </div>
-      <div className="border-t border-slate-200 dark:border-slate-800 my-2" />
-      <div className="space-y-1">
-        <TooltipRow label="Cost of equity" value={pct(breakdown.cost_of_equity)} />
-        <TooltipRow label="Cost of debt (after tax)" value={pct(breakdown.after_tax_cost_of_debt)} />
-        <TooltipRow label="Tax rate" value={pct(breakdown.tax_rate)} />
+        <TooltipRow label={t("dcfRiskFree")} value={pct(breakdown.risk_free_rate)} />
+        {typeof breakdown.raw_beta === "number" && (
+          <TooltipRow label={t("dcfRawBeta")} value={breakdown.raw_beta.toFixed(2)} />
+        )}
+        <TooltipRow label={t("dcfBeta")} value={breakdown.beta.toFixed(2)} />
+        <TooltipRow label={t("dcfEquityRiskPremium")} value={pct(breakdown.equity_risk_premium)} />
       </div>
       <div className="border-t border-slate-200 dark:border-slate-800 my-2" />
       <div className="space-y-1">
-        <TooltipRow label="Market cap weight" value={pct(breakdown.equity_weight)} />
-        <TooltipRow label="Debt weight" value={pct(breakdown.debt_weight)} />
+        <TooltipRow label={t("dcfCostOfEquity")} value={pct(breakdown.cost_of_equity)} />
+        <TooltipRow label={t("dcfCostOfDebt")} value={pct(breakdown.after_tax_cost_of_debt)} />
+        <TooltipRow label={t("dcfTaxRate")} value={pct(breakdown.tax_rate)} />
+      </div>
+      <div className="border-t border-slate-200 dark:border-slate-800 my-2" />
+      <div className="space-y-1">
+        <TooltipRow label={t("dcfMarketCapWeight")} value={pct(breakdown.equity_weight)} />
+        <TooltipRow label={t("dcfDebtWeight")} value={pct(breakdown.debt_weight)} />
       </div>
       <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
         WACC = {pct(breakdown.equity_weight)} × {pct(breakdown.cost_of_equity)} +{" "}
@@ -377,12 +824,54 @@ function TooltipRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function AssumptionTooltip({
+  title,
+  body,
+  caution,
+}: {
+  title: string;
+  body: string;
+  caution: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3 shadow-xl text-slate-700 dark:text-slate-200">
+      <div className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
+        {title}
+      </div>
+      <p className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+        {body}
+      </p>
+      <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+        {caution}
+      </p>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // 估值结果卡片
 // ─────────────────────────────────────────
 function ValuationResultCard({ result }: { result: DCFResult }) {
+  const t = useT();
   const upside = result.upside_pct ?? 0;
   const isUndervalued = upside > 0;
+  const assumptions = result.assumptions;
+  const growthPct = assumptions.growth_rate * 100;
+  const discountPct = assumptions.discount_rate * 100;
+  const impliedGrowthPct =
+    result.implied_growth_rate !== null ? result.implied_growth_rate * 100 : null;
+  const impliedGrowthText =
+    impliedGrowthPct === null
+      ? "—"
+      : `${impliedGrowthPct.toFixed(1)}${impliedGrowthPct >= 59.95 ? "%+" : "%"}`;
+  const netDebt = result.net_debt;
+  const balanceSheetLabel = netDebt !== null && netDebt < 0 ? t("dcfNetCash") : t("dcfNetDebt");
+  const balanceSheetValue =
+    netDebt === null ? "—" : `$${Math.abs(netDebt).toFixed(1)}B`;
+  const marketLens =
+    impliedGrowthPct !== null && impliedGrowthPct > growthPct + 3
+      ? t("dcfMarketImplies", { implied: impliedGrowthText })
+      : t("dcfCompareImplied");
   const cardStyle = isUndervalued
     ? "from-emerald-500 to-green-600"
     : "from-rose-500 to-red-600";
@@ -392,25 +881,25 @@ function ValuationResultCard({ result }: { result: DCFResult }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
         <div>
           <div className="text-xs uppercase tracking-wide opacity-80 mb-1">
-            Intrinsic Value
+            {t("dcfIntrinsic")}
           </div>
           <div className="text-4xl font-bold tabular-nums">
             ${result.intrinsic_value_per_share?.toFixed(2)}
           </div>
-          <div className="text-sm opacity-80 mt-1">per share</div>
+          <div className="text-sm opacity-80 mt-1">{t("dcfIntrinsicSub")}</div>
         </div>
         <div>
           <div className="text-xs uppercase tracking-wide opacity-80 mb-1">
-            Current Price
+            {t("dcfCurrent")}
           </div>
           <div className="text-3xl font-bold tabular-nums">
             ${result.current_price?.toFixed(2) ?? "—"}
           </div>
-          <div className="text-sm opacity-80 mt-1">market price</div>
+          <div className="text-sm opacity-80 mt-1">{t("dcfCurrentSub")}</div>
         </div>
         <div>
           <div className="text-xs uppercase tracking-wide opacity-80 mb-1">
-            Upside / Downside
+            {t("dcfUpside")}
           </div>
           <div className="text-4xl font-bold tabular-nums flex items-center gap-1">
             {isUndervalued ? (
@@ -422,60 +911,72 @@ function ValuationResultCard({ result }: { result: DCFResult }) {
             {upside.toFixed(1)}%
           </div>
           <div className="text-sm opacity-80 mt-1">
-            {isUndervalued ? "potentially undervalued" : "potentially overvalued"}
+            {isUndervalued ? t("dcfUndervalued") : t("dcfOvervalued")}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-xl border border-white/20 bg-white/10 p-3 text-sm leading-relaxed">
+        <div className="flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-semibold">{t("dcfAssumptionTitle")}</span>{" "}
+            {t("dcfAssumptionBody", {
+              growth: growthPct.toFixed(1),
+              discount: discountPct.toFixed(1),
+            })}{" "}
+            {marketLens}
           </div>
         </div>
       </div>
 
       <div className="mt-5 pt-5 border-t border-white/20 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div>
-          <div className="text-xs opacity-70">Current FCF</div>
+          <div className="text-xs opacity-70">{t("dcfCurrentFcf")}</div>
           <div className="font-semibold tabular-nums">
             ${result.current_fcf?.toFixed(1) ?? "—"}B
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Terminal Value (PV)</div>
+          <div className="text-xs opacity-70">{t("dcfTerminalValuePv")}</div>
           <div className="font-semibold tabular-nums">
             ${result.terminal_value_pv?.toFixed(0) ?? "—"}B
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Enterprise Value</div>
+          <div className="text-xs opacity-70">{t("dcfEnterpriseValue")}</div>
           <div className="font-semibold tabular-nums">
             ${result.enterprise_value?.toFixed(0) ?? "—"}B
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Equity Value</div>
+          <div className="text-xs opacity-70">{t("dcfEquityValue")}</div>
           <div className="font-semibold tabular-nums">
             ${result.equity_value?.toFixed(0) ?? "—"}B
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Shares Out</div>
+          <div className="text-xs opacity-70">{t("dcfSharesOut")}</div>
           <div className="font-semibold tabular-nums">
             {result.shares_outstanding?.toFixed(2) ?? "—"}B
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Net Debt</div>
+          <div className="text-xs opacity-70">{balanceSheetLabel}</div>
           <div className="font-semibold tabular-nums">
-            ${result.net_debt?.toFixed(1) ?? "—"}B
+            {balanceSheetValue}
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Terminal % of EV</div>
+          <div className="text-xs opacity-70">{t("dcfTerminalPct")}</div>
           <div className="font-semibold tabular-nums">
             {result.terminal_value_pct?.toFixed(1) ?? "—"}%
           </div>
         </div>
         <div>
-          <div className="text-xs opacity-70">Implied Growth</div>
+          <div className="text-xs opacity-70">{t("dcfImpliedGrowth")}</div>
           <div className="font-semibold tabular-nums">
-            {result.implied_growth_rate !== null
-              ? `${(result.implied_growth_rate * 100).toFixed(1)}%`
-              : "—"}
+            {impliedGrowthText}
           </div>
         </div>
       </div>
@@ -487,7 +988,13 @@ function ValuationResultCard({ result }: { result: DCFResult }) {
 // 敏感性三档场景
 // ─────────────────────────────────────────
 function SensitivityScenarios({ data }: { data: SensitivityResult }) {
+  const t = useT();
   const order = ["conservative", "base", "optimistic"];
+  const scenarioLabels: Record<string, string> = {
+    conservative: t("dcfConservative"),
+    base: t("dcfBase"),
+    optimistic: t("dcfOptimistic"),
+  };
   const styles: Record<string, string> = {
     conservative: "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900",
     base: "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900",
@@ -498,7 +1005,7 @@ function SensitivityScenarios({ data }: { data: SensitivityResult }) {
   return (
     <div>
       <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 text-sm">
-        🎲 Sensitivity Analysis · Three Scenarios
+        🎲 {t("dcfSensitivityTitle")}
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {order.map((key) => {
@@ -512,11 +1019,11 @@ function SensitivityScenarios({ data }: { data: SensitivityResult }) {
               className={`rounded-2xl border p-4 ${styles[key]}`}
             >
               <div className="font-bold text-slate-900 dark:text-slate-100 mb-2">
-                {s.label}
+                {scenarioLabels[key] ?? s.label}
               </div>
               <div className="space-y-1 text-xs text-slate-600 dark:text-slate-400 mb-3">
                 <div>WACC: {(s.discount_rate * 100).toFixed(1)}%</div>
-                <div>Growth: {(s.growth_rate * 100).toFixed(1)}%</div>
+                <div>{t("dcfGrowthLabel")}: {(s.growth_rate * 100).toFixed(1)}%</div>
               </div>
               {s.intrinsic_value !== null ? (
                 <>
@@ -531,11 +1038,11 @@ function SensitivityScenarios({ data }: { data: SensitivityResult }) {
                     }`}
                   >
                     {isUp ? "+" : ""}
-                    {upside.toFixed(1)}% vs market
+                    {upside.toFixed(1)}% {t("dcfVsMarket")}
                   </div>
                 </>
               ) : (
-                <div className="text-sm text-slate-400">N/A</div>
+                <div className="text-sm text-slate-400">{t("dcfNotAvailable")}</div>
               )}
             </div>
           );

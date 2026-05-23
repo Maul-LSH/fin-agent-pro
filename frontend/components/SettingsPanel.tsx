@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -46,11 +46,6 @@ export function SettingsPanel({
   const [provider, setProvider] = useState(currentProvider);
   const [apiKey, setApiKey] = useState(currentApiKey);
   const [showKey, setShowKey] = useState(false);
-
-  useEffect(() => {
-    setProvider(currentProvider);
-    setApiKey(currentApiKey);
-  }, [currentProvider, currentApiKey, open]);
 
   const handleSave = () => {
     onSave({ provider, apiKey: apiKey.trim() });

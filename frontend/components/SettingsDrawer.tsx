@@ -17,23 +17,30 @@ interface Props {
 
 const STORAGE_KEY = "fin-agent-config";
 
+function loadSavedConfig() {
+  if (typeof window === "undefined") {
+    return { provider: "Claude (Anthropic)", apiKey: "" };
+  }
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const cfg = JSON.parse(saved);
+      return {
+        provider: cfg.provider || "Claude (Anthropic)",
+        apiKey: cfg.apiKey || "",
+      };
+    }
+  } catch {}
+  return { provider: "Claude (Anthropic)", apiKey: "" };
+}
+
 export function SettingsDrawer({ open, onClose }: Props) {
   const t = useT();
   const { theme, setTheme, lang, setLang } = useApp();
+  const [savedConfig] = useState(loadSavedConfig);
 
-  const [provider, setProvider] = useState("Claude (Anthropic)");
-  const [apiKey, setApiKey] = useState("");
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const cfg = JSON.parse(saved);
-        if (cfg.provider) setProvider(cfg.provider);
-        if (cfg.apiKey) setApiKey(cfg.apiKey);
-      }
-    } catch {}
-  }, [open]);
+  const [provider, setProvider] = useState(savedConfig.provider);
+  const [apiKey, setApiKey] = useState(savedConfig.apiKey);
 
   const handleSave = () => {
     try {

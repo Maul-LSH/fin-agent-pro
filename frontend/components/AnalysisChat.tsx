@@ -42,6 +42,24 @@ const EXAMPLE_QUERIES_EN = [
   "Microsoft cash flow analysis",
 ];
 
+const ANALYSIS_STORAGE_KEY = "fin-agent-analysis-state";
+
+interface AnalysisStoredState {
+  input: string;
+  result: AnalyzeResponse | null;
+  mode: "company" | "sector";
+}
+
+function loadAnalysisStoredState(): Partial<AnalysisStoredState> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(ANALYSIS_STORAGE_KEY);
+    return saved ? (JSON.parse(saved) as Partial<AnalysisStoredState>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AnalysisChat({
   apiKey,
   provider,
@@ -52,9 +70,15 @@ export function AnalysisChat({
 }: Props) {
   const t = useT();
   const { lang } = useApp();
-  const [input, setInput] = useState(initialQuery ?? "");
+  const [storedState] = useState(() => (initialQuery ? null : loadAnalysisStoredState()));
+  const shouldRestoreStoredState = storedState?.mode === analysisMode;
+  const [input, setInput] = useState(
+    initialQuery ?? (shouldRestoreStoredState ? storedState?.input ?? "" : "")
+  );
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [result, setResult] = useState<AnalyzeResponse | null>(
+    shouldRestoreStoredState ? storedState?.result ?? null : null
+  );
   const [error, setError] = useState<string | null>(null);
   const initialRunRef = useRef<string | null>(null);
 
@@ -68,6 +92,15 @@ export function AnalysisChat({
       .split("相关板块和代表公司")[0]
       .trim() || "";
   const sectorSections = isSectorMode ? parseSectorSections(result?.analysis) : null;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        ANALYSIS_STORAGE_KEY,
+        JSON.stringify({ input, result, mode: analysisMode })
+      );
+    } catch {}
+  }, [input, result, analysisMode]);
 
   const handleSubmit = async (text?: string) => {
     const query = text ?? input;
@@ -233,7 +266,7 @@ export function AnalysisChat({
                 <ExportPDFButton
                   targetId="analysis-report"
                   filename={`analysis-${result.company.ticker}.pdf`}
-                  label="Export PDF Report"
+                  label={t("exportPdfReport")}
                 />
               </div>
             )}

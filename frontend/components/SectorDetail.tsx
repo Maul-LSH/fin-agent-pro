@@ -37,9 +37,9 @@ export function SectorDetail({
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
 
     const fetchAll = async () => {
+      setLoading(true);
       try {
         if (market === "us" && etfTicker) {
           const h = await apiClient.getHoldings(etfTicker, 5);

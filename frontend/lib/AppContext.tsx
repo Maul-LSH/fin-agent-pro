@@ -12,7 +12,7 @@ import {
   createContext,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
   ReactNode,
 } from "react";
 
@@ -21,6 +21,10 @@ export type Lang = "zh" | "en";
 export type Market = "us" | "cn" | "hk";
 
 const STORAGE_KEY = "fin-agent-prefs";
+const PREFS_CHANGE_EVENT = "fin-agent-prefs-change";
+const DEFAULT_PREFS = { theme: "system" as Theme, lang: "en" as Lang, market: "us" as Market };
+let cachedPrefsRaw: string | null = null;
+let cachedPrefsValue = DEFAULT_PREFS;
 
 interface AppContextValue {
   theme: Theme;
@@ -33,27 +37,35 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+function readPrefs(): { theme: Theme; lang: Lang; market: Market } {
+  if (typeof window === "undefined") return DEFAULT_PREFS;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === cachedPrefsRaw) return cachedPrefsValue;
+    cachedPrefsRaw = saved;
+    cachedPrefsValue = saved ? { ...DEFAULT_PREFS, ...JSON.parse(saved) } : DEFAULT_PREFS;
+    return cachedPrefsValue;
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [lang, setLangState] = useState<Lang>("en");
-  const [market, setMarketState] = useState<Market>("us");
-  const [hydrated, setHydrated] = useState(false);
+  const prefs = useSyncExternalStore(
+    (onStoreChange) => {
+      window.addEventListener("storage", onStoreChange);
+      window.addEventListener(PREFS_CHANGE_EVENT, onStoreChange);
+      return () => {
+        window.removeEventListener("storage", onStoreChange);
+        window.removeEventListener(PREFS_CHANGE_EVENT, onStoreChange);
+      };
+    },
+    readPrefs,
+    () => DEFAULT_PREFS
+  );
+  const { theme, lang, market } = prefs;
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const prefs = JSON.parse(saved);
-        if (prefs.theme) setThemeState(prefs.theme);
-        if (prefs.lang) setLangState(prefs.lang);
-        if (prefs.market) setMarketState(prefs.market);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
     const root = document.documentElement;
     const apply = (t: Theme) => {
       const isDark =
@@ -69,17 +81,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     }
-  }, [theme, hydrated]);
+  }, [theme]);
 
   const persist = (next: { theme: Theme; lang: Lang; market: Market }) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      window.dispatchEvent(new Event(PREFS_CHANGE_EVENT));
     } catch {}
   };
 
-  const setTheme = (t: Theme) => { setThemeState(t); persist({ theme: t, lang, market }); };
-  const setLang = (l: Lang) => { setLangState(l); persist({ theme, lang: l, market }); };
-  const setMarket = (m: Market) => { setMarketState(m); persist({ theme, lang, market: m }); };
+  const setTheme = (t: Theme) => persist({ theme: t, lang, market });
+  const setLang = (l: Lang) => persist({ theme, lang: l, market });
+  const setMarket = (m: Market) => persist({ theme, lang, market: m });
 
   return (
     <AppContext.Provider value={{ theme, lang, market, setTheme, setLang, setMarket }}>
@@ -125,7 +138,7 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     featHeatmapEyebrow: "SECTOR HEATMAP",
     featHeatmapTitle: "See the heat.",
-    featHeatmapBody: "Bigger bubbles mean more attention. Deeper colors mean wilder swings. Find the action across 11 sectors in seconds — no spreadsheets, no scrolling through tickers.",
+    featHeatmapBody: "News lags. Trading behavior doesn't. This map shows where capital and volatility are concentrating right now — not what to buy, but where to look.",
 
     featAiEyebrow: "AI FINANCIAL ANALYSIS",
     featAiTitle: "30 seconds. Any company.",
@@ -146,6 +159,8 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     marketOverviewSubtitle: "Live indices, sector pulse, and what's moving today.",
     sectorHeatmapTitle: "Sector Heatmap",
     sectorHeatmapSubtitle: "Bigger bubble = more attention · Deeper color = more volatile",
+    heatmapBehaviorMantra: "News lags. Trading behavior doesn't.",
+    heatmapBehaviorBody: "This map shows where capital and volatility are concentrating right now — not what to buy, but where to look.",
     sectorRankingTitle: "Sector Ranking",
     hkAnalysisTitle: "Analyze any HK-listed company",
     hkAnalysisBody: "Sector heatmaps aren't available for Hong Kong, but you can ask the AI about any HK-listed stock — Tencent (00700), HSBC (00005), Alibaba HK (09988), Xiaomi (01810), and more. Get the same Altman Z-Score / Beneish M-Score / financial breakdown.",
@@ -237,6 +252,8 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     save: "Save",
     compareTitle: "Compare Companies",
     compareSubtitle: "Side-by-side comparison of 2-4 companies, Apple-style",
+    compareHeaderSubtitle: "Add 2-4 tickers to compare side-by-side",
+    compareTickerPlaceholder: "e.g. AAPL, MSFT, GOOGL, 600519...",
     compareAdd: "Add",
     compareRun: "Compare",
     compareNeed2: "Need at least 2 companies",
@@ -252,8 +269,14 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     compareGroupCashflow: "Cash Flow",
     compareBestValue: "Best value among compared",
     comparePeriod: "Period",
+    compareFailed: "Failed to compare",
+    exportPdf: "Export PDF",
+    exportPdfReport: "Export PDF Report",
+    tickerRequired: "Ticker is required",
     portfolioTitle: "My Portfolio",
     portfolioSubtitle: "Diagnose your holdings — weighted risk, sector concentration, individual signals. Stored locally.",
+    portfolioHeaderTitle: "My Portfolio · AI Diagnosis",
+    portfolioHeaderSubtitle: "Enter your holdings to get a weighted risk diagnosis. Stored locally in your browser.",
     portfolioTickerPh: "Ticker (AAPL, 600519, 00700...)",
     portfolioAmountPh: "Position size ($, optional)",
     portfolioAdd: "Add",
@@ -269,15 +292,33 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     portfolioSectorConcentration: "Sector Concentration",
     portfolioGeoDistribution: "Geographic Distribution",
     portfolioHoldings: "Holdings Detail",
+    portfolioRemoveConfirm: "Remove all holdings?",
+    portfolioDiagnosisFailed: "Diagnosis failed",
+    portfolioPublicDataDisclaimer: "Diagnostic only — not investment advice. All conclusions are based on public financial data.",
+    portfolioSomeDataMissing: "Some data couldn't be loaded:",
+    portfolioTickerCol: "Ticker",
+    portfolioNameCol: "Name",
+    portfolioSectorCol: "Sector",
+    portfolioWeightCol: "Weight",
     dcfTitle: "DCF Valuation",
-    dcfSubtitle: "Discounted Cash Flow model with three-scenario sensitivity analysis",
+    dcfHeaderTitle: "Model Builder · DCF Valuation",
+    dcfSubtitle: "Two-stage DCF valuation with WACC build-up, net debt adjustment, and implied growth",
     dcfTicker: "Ticker",
+    dcfTickerPlaceholder: "AAPL, MSFT, TSLA...",
     dcfWacc: "Discount Rate (WACC)",
+    dcfWaccLoading: "Calculating suggested WACC...",
+    dcfWaccSuggested: "Suggested by CAPM + capital structure",
     dcfWaccHint: "Higher = more conservative",
-    dcfGrowth: "FCF Growth Rate (5y)",
+    dcfGrowth: "Stage 1 FCF Growth (5y)",
     dcfGrowthHint: "Annual FCF growth assumption",
+    dcfGrowthTooltipTitle: "How we estimate growth",
+    dcfGrowthTooltipBody: "The default uses recent earnings growth first, then revenue growth if earnings growth is unavailable. For high-growth technology companies, the cap rises to 45%; otherwise it is capped at 25%. If live data is missing, we fall back to 5%.",
+    dcfGrowthTooltipCaution: "This is a scenario input, not a forecast. Change it when your view of future cash-flow growth differs from recent fundamentals.",
     dcfTerminal: "Terminal Growth",
     dcfTerminalHint: "Long-term GDP-like growth",
+    dcfTerminalTooltipTitle: "Why GDP-like growth",
+    dcfTerminalTooltipBody: "Terminal growth represents the steady-state growth rate after the explicit forecast period. We default to 2.5% because a mature company should not outgrow the economy forever.",
+    dcfTerminalTooltipCaution: "Keep terminal growth below WACC. Small changes here can move valuation sharply because it drives the terminal value.",
     dcfRun: "Run DCF Valuation",
     dcfRunning: "Calculating...",
     dcfIntrinsic: "Intrinsic Value",
@@ -285,13 +326,82 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     dcfCurrent: "Current Price",
     dcfCurrentSub: "market price",
     dcfUpside: "Upside / Downside",
-    dcfUndervalued: "potentially undervalued",
-    dcfOvervalued: "potentially overvalued",
-    dcfFcfProjection: "5-Year FCF Projection (Present Value, $B)",
+    dcfUndervalued: "above market under these inputs",
+    dcfOvervalued: "below market under these inputs",
+    dcfAssumptionTitle: "Assumption-sensitive result.",
+    dcfAssumptionBody: "DCF can be unreliable for hyper-growth stocks; this value reflects {growth}% near-term FCF growth and a {discount}% discount rate.",
+    dcfMarketImplies: "Market price implies roughly {implied} Stage 1 growth in this model.",
+    dcfCompareImplied: "Compare the implied growth with your own view of the business.",
+    dcfFcfProjection: "10-Year Two-Stage FCF Projection (Present Value, $B)",
+    dcfYear: "Year",
+    dcfFutureFcf: "FCF (Future)",
+    dcfPresentValue: "Present Value",
+    dcfCurrentFcf: "Current FCF",
+    dcfTerminalValuePv: "Terminal Value (PV)",
+    dcfEnterpriseValue: "Enterprise Value",
+    dcfEquityValue: "Equity Value",
+    dcfSharesOut: "Shares Out",
+    dcfNetDebt: "Net Debt",
+    dcfNetCash: "Net Cash",
+    dcfTerminalPct: "Terminal % of EV",
+    dcfImpliedGrowth: "Implied Growth",
+    dcfSuggestedWacc: "Suggested WACC",
+    dcfRiskFree: "Risk-free rate (10Y T)",
+    dcfBeta: "Beta",
+    dcfRawBeta: "Raw beta",
+    dcfEquityRiskPremium: "Equity risk premium",
+    dcfCostOfEquity: "Cost of equity",
+    dcfCostOfDebt: "Cost of debt (after tax)",
+    dcfTaxRate: "Tax rate",
+    dcfMarketCapWeight: "Market cap weight",
+    dcfDebtWeight: "Debt weight",
+    dcfGrowthProfile: "Growth-sensitive default",
+    dcfGrowthProfileBody: "For high-growth technology companies, defaults now use recent fundamental growth with a higher growth ceiling and Blume-adjusted beta. Treat it as a starting scenario, not a target price.",
+    dcfContextTitle: "Valuation context",
+    dcfContextSubtitle: "For high-growth companies, read DCF alongside multiples, growth quality, margins, and market-implied expectations.",
+    dcfThreeAnswersTitle: "Three answers, one uncertainty",
+    dcfOurDcfAnswer: "Our DCF",
+    dcfMarketAnswer: "Market price",
+    dcfAnalystAnswer: "Wall St. target",
+    dcfAnalystCount: "{n} analysts",
+    dcfTargetRange: "Target range",
+    dcfRecommendation: "Consensus",
+    dcfDisagreementSignal: "These answers can disagree sharply. That disagreement is the signal: DCF, market price, and analyst targets are different lenses, not certain truth.",
+    dcfAnalystCaveat: "Analyst targets can be stale or optimistic, so treat them as a second opinion rather than the answer.",
+    dcfViewAnalysts: "View analyst coverage",
+    dcfAnalystDrawerTitle: "Wall St. coverage",
+    dcfAnalystDrawerSubtitle: "Recent yfinance rating actions and target-price consensus. Availability varies by ticker.",
+    dcfAnalystFirm: "Firm",
+    dcfAnalystAction: "Action",
+    dcfAnalystToGrade: "To grade",
+    dcfAnalystFromGrade: "From",
+    dcfNoAnalystEntries: "No recent firm-level rating actions available from yfinance.",
+    dcfHighGrowthWarning: "High-growth profile detected: DCF can become extremely unstable. Treat the intrinsic value as a scenario output, not a verdict.",
+    dcfStability: "DCF stability",
+    dcfUnstable: "Extremely unstable",
+    dcfModerate: "Moderate",
+    dcfForwardPe: "Forward P/E",
+    dcfPeg: "PEG",
+    dcfEvSales: "EV/Sales",
+    dcfEvRevenueGrowth: "EV/Revenue Growth",
+    dcfRevenueGrowth: "Revenue Growth",
+    dcfEarningsGrowth: "Earnings Growth",
+    dcfGrossMargin: "Gross Margin",
+    dcfOperatingMargin: "Operating Margin",
+    dcfMarginTrend: "Margin trend",
+    dcfMarketImplied: "Market-implied Growth",
+    dcfContextNote: "No single metric settles valuation. The point is to compare what the market is pricing against growth durability and margin quality.",
+    dcfBankWarning: "Banks and financial companies are better valued with Residual Income or P/B models, not classic FCF DCF.",
+    dcfReitWarning: "REITs are better valued with FFO/AFFO, not classic FCF DCF.",
     dcfSensitivityTitle: "Sensitivity Analysis · Three Scenarios",
     dcfConservative: "Conservative",
     dcfBase: "Base Case",
     dcfOptimistic: "Optimistic",
+    dcfGrowthLabel: "Growth",
+    dcfVsMarket: "vs market",
+    dcfNotAvailable: "N/A",
+    usMarket: "US Stocks",
+    cnMarket: "China A-Shares",
     footerDisclaimer: "For educational use only. Nothing here constitutes investment advice.",
     backToHome: "Back to home",
     loading: "Loading...",
@@ -326,7 +436,7 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     featHeatmapEyebrow: "行业热度图",
     featHeatmapTitle: "热点一目了然。",
-    featHeatmapBody: "气泡越大，关注度越高；颜色越深，波动越剧烈。30 秒看清 11 个行业的资金动向——不用翻表、不用算指标。",
+    featHeatmapBody: "新闻滞后，交易行为不会。这张图显示资金和波动当前聚集在哪——不是叫你买什么，而是告诉你该往哪看。",
 
     featAiEyebrow: "AI 财务分析",
     featAiTitle: "30 秒，看懂任何公司。",
@@ -347,6 +457,8 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     marketOverviewSubtitle: "实时指数、板块脉搏、今日热点。",
     sectorHeatmapTitle: "行业热度地图",
     sectorHeatmapSubtitle: "气泡越大 = 资金越关注 · 颜色越深 = 波动越剧烈",
+    heatmapBehaviorMantra: "新闻滞后，交易行为不会。",
+    heatmapBehaviorBody: "这张图显示资金和波动当前聚集在哪——不是叫你买什么，而是告诉你该往哪看。",
     sectorRankingTitle: "板块排行",
     hkAnalysisTitle: "分析任何港股公司",
     hkAnalysisBody: "港股暂不支持行业热度图，但你可以让 AI 分析任何港股个股——腾讯 (00700)、汇丰 (00005)、阿里 (09988)、小米 (01810) 等。同样的 Altman Z-Score / Beneish M-Score / 财务全面解读。",
@@ -438,6 +550,8 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     save: "保存",
     compareTitle: "多公司对比",
     compareSubtitle: "Apple 风格的横向对比，支持 2-4 家公司",
+    compareHeaderSubtitle: "添加 2-4 个股票代码进行横向对比",
+    compareTickerPlaceholder: "例：AAPL、MSFT、GOOGL、600519...",
     compareAdd: "添加",
     compareRun: "对比",
     compareNeed2: "至少需要 2 家公司",
@@ -453,8 +567,14 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     compareGroupCashflow: "现金流",
     compareBestValue: "对比中最优",
     comparePeriod: "财年",
+    compareFailed: "对比失败",
+    exportPdf: "导出 PDF",
+    exportPdfReport: "导出 PDF 报告",
+    tickerRequired: "请输入股票代码",
     portfolioTitle: "我的投资组合",
     portfolioSubtitle: "诊断你的持仓——加权风险、行业集中度、个股信号。数据本地存储。",
+    portfolioHeaderTitle: "我的投资组合 · AI 诊断",
+    portfolioHeaderSubtitle: "输入持仓后获得加权风险诊断。数据只保存在你的浏览器里。",
     portfolioTickerPh: "代码（AAPL、600519、00700...）",
     portfolioAmountPh: "仓位金额（$，可选）",
     portfolioAdd: "添加",
@@ -470,15 +590,33 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     portfolioSectorConcentration: "行业集中度",
     portfolioGeoDistribution: "地域分布",
     portfolioHoldings: "持仓明细",
+    portfolioRemoveConfirm: "确认清空全部持仓？",
+    portfolioDiagnosisFailed: "诊断失败",
+    portfolioPublicDataDisclaimer: "仅作诊断参考——不构成投资建议。所有结论基于公开财务数据。",
+    portfolioSomeDataMissing: "部分数据未能加载：",
+    portfolioTickerCol: "代码",
+    portfolioNameCol: "名称",
+    portfolioSectorCol: "行业",
+    portfolioWeightCol: "权重",
     dcfTitle: "DCF 估值",
-    dcfSubtitle: "现金流折现模型 + 三档场景敏感性分析",
+    dcfHeaderTitle: "模型构建器 · DCF 估值",
+    dcfSubtitle: "两阶段 DCF：包含 WACC、净负债调整、终值和隐含增长率",
     dcfTicker: "股票代码",
+    dcfTickerPlaceholder: "AAPL、MSFT、TSLA...",
     dcfWacc: "折现率 (WACC)",
+    dcfWaccLoading: "正在计算建议 WACC...",
+    dcfWaccSuggested: "由 CAPM + 资本结构估算",
     dcfWaccHint: "越高越保守",
-    dcfGrowth: "未来 5 年自由现金流增速",
+    dcfGrowth: "第一阶段自由现金流增速 (5 年)",
     dcfGrowthHint: "年化增速假设",
+    dcfGrowthTooltipTitle: "我们如何推测增速",
+    dcfGrowthTooltipBody: "默认优先使用近期 earnings growth；如果没有，就使用 revenue growth。高增长科技公司上限放宽到 45%；其他公司上限为 25%。如果实时数据缺失，则回退到 5%。",
+    dcfGrowthTooltipCaution: "这是场景输入，不是预测结论。如果你对未来现金流增速的判断不同，可以手动调整。",
     dcfTerminal: "终值增长率",
     dcfTerminalHint: "长期 GDP 类增长",
+    dcfTerminalTooltipTitle: "为什么用 GDP 类增长",
+    dcfTerminalTooltipBody: "终值增长率代表明确预测期之后的稳定增长。默认 2.5%，因为成熟公司不应该被假设为永远跑赢整个经济。",
+    dcfTerminalTooltipCaution: "终值增长率必须低于 WACC。它会影响终值，哪怕小幅变化也可能显著改变估值。",
     dcfRun: "运行 DCF",
     dcfRunning: "计算中...",
     dcfIntrinsic: "内在价值",
@@ -486,13 +624,82 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     dcfCurrent: "当前价格",
     dcfCurrentSub: "市场价",
     dcfUpside: "上涨 / 下跌空间",
-    dcfUndervalued: "可能被低估",
-    dcfOvervalued: "可能被高估",
-    dcfFcfProjection: "未来 5 年自由现金流现值 (B)",
+    dcfUndervalued: "在这些假设下高于市场价",
+    dcfOvervalued: "在这些假设下低于市场价",
+    dcfAssumptionTitle: "结果对假设高度敏感。",
+    dcfAssumptionBody: "DCF 对高增长股票并不稳定；这个估值使用了 {growth}% 近期自由现金流增速和 {discount}% 折现率。",
+    dcfMarketImplies: "在这个模型里，市场价格隐含约 {implied} 的第一阶段增长率。",
+    dcfCompareImplied: "请把隐含增长率与你对公司的判断放在一起看。",
+    dcfFcfProjection: "10 年两阶段自由现金流预测（现值，$B）",
+    dcfYear: "年份",
+    dcfFutureFcf: "未来 FCF",
+    dcfPresentValue: "现值",
+    dcfCurrentFcf: "当前 FCF",
+    dcfTerminalValuePv: "终值现值",
+    dcfEnterpriseValue: "企业价值",
+    dcfEquityValue: "股权价值",
+    dcfSharesOut: "流通股本",
+    dcfNetDebt: "净债务",
+    dcfNetCash: "净现金",
+    dcfTerminalPct: "终值占 EV",
+    dcfImpliedGrowth: "隐含增长率",
+    dcfSuggestedWacc: "建议 WACC",
+    dcfRiskFree: "无风险利率（10 年期美债）",
+    dcfBeta: "调整后 Beta",
+    dcfRawBeta: "原始 Beta",
+    dcfEquityRiskPremium: "股权风险溢价",
+    dcfCostOfEquity: "股权成本",
+    dcfCostOfDebt: "债务成本（税后）",
+    dcfTaxRate: "税率",
+    dcfMarketCapWeight: "市值权重",
+    dcfDebtWeight: "债务权重",
+    dcfGrowthProfile: "高增长默认假设",
+    dcfGrowthProfileBody: "对高增长科技公司，默认值现在会参考近期基本面增长，并使用更高的增长上限和 Blume 调整 Beta。它是起始场景，不是目标价。",
+    dcfContextTitle: "估值上下文",
+    dcfContextSubtitle: "对高增长公司，要把 DCF 与估值倍数、增长质量、利润率和市场隐含预期放在一起看。",
+    dcfThreeAnswersTitle: "三个答案，一个不确定性",
+    dcfOurDcfAnswer: "我们的 DCF",
+    dcfMarketAnswer: "市场价格",
+    dcfAnalystAnswer: "华尔街目标价",
+    dcfAnalystCount: "{n} 位分析师",
+    dcfTargetRange: "目标价区间",
+    dcfRecommendation: "共识评级",
+    dcfDisagreementSignal: "这些答案可能剧烈分歧。分歧本身就是信号：DCF、市场价格和机构目标价是三种视角，不是确定真相。",
+    dcfAnalystCaveat: "分析师目标价可能滞后或偏乐观，所以它只是第二意见，不是正确答案。",
+    dcfViewAnalysts: "查看分析师覆盖",
+    dcfAnalystDrawerTitle: "华尔街覆盖记录",
+    dcfAnalystDrawerSubtitle: "来自 yfinance 的近期评级动作与目标价共识。不同股票可用字段会不同。",
+    dcfAnalystFirm: "机构",
+    dcfAnalystAction: "动作",
+    dcfAnalystToGrade: "当前评级",
+    dcfAnalystFromGrade: "此前评级",
+    dcfNoAnalystEntries: "yfinance 暂无近期机构级评级动作。",
+    dcfHighGrowthWarning: "检测到高增长特征：DCF 会变得极不稳定。请把内在价值视为情景输出，而不是定论。",
+    dcfStability: "DCF 稳定性",
+    dcfUnstable: "极不稳定",
+    dcfModerate: "中等",
+    dcfForwardPe: "Forward P/E",
+    dcfPeg: "PEG",
+    dcfEvSales: "EV/Sales",
+    dcfEvRevenueGrowth: "EV/Revenue Growth",
+    dcfRevenueGrowth: "营收增速",
+    dcfEarningsGrowth: "盈利增速",
+    dcfGrossMargin: "毛利率",
+    dcfOperatingMargin: "营业利润率",
+    dcfMarginTrend: "利润率趋势",
+    dcfMarketImplied: "市场隐含增长",
+    dcfContextNote: "没有单一指标能给估值下定论。关键是比较市场正在定价什么，以及增长和利润率是否能支撑这种预期。",
+    dcfBankWarning: "银行和金融公司更适合用剩余收益模型或 P/B 估值，不适合经典 FCF DCF。",
+    dcfReitWarning: "REITs 更适合用 FFO/AFFO 估值，不适合经典 FCF DCF。",
     dcfSensitivityTitle: "敏感性分析 · 三档场景",
     dcfConservative: "保守",
     dcfBase: "中性",
     dcfOptimistic: "激进",
+    dcfGrowthLabel: "增长率",
+    dcfVsMarket: "vs 市场",
+    dcfNotAvailable: "不可用",
+    usMarket: "美股",
+    cnMarket: "A 股",
     footerDisclaimer: "本工具仅供学习使用，所有内容不构成投资建议。",
     backToHome: "返回首页",
     loading: "加载中...",

@@ -28,12 +28,39 @@ import {
   Cell,
   ResponsiveContainer,
   Tooltip as ReTooltip,
-  Legend,
 } from "recharts";
 import { apiClient, type PortfolioHolding, type PortfolioDiagnosis } from "@/lib/api";
 import { ExportPDFButton } from "./ExportPDFButton";
+import { useT } from "@/lib/AppContext";
 
 const STORAGE_KEY = "fin-agent-portfolio";
+const PORTFOLIO_UI_STORAGE_KEY = "fin-agent-portfolio-ui-state";
+
+interface PortfolioStoredState {
+  tickerInput: string;
+  amountInput: string;
+  diagnosis: PortfolioDiagnosis | null;
+}
+
+function loadStoredHoldings(): PortfolioHolding[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? (JSON.parse(saved) as PortfolioHolding[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadPortfolioStoredState(): Partial<PortfolioStoredState> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(PORTFOLIO_UI_STORAGE_KEY);
+    return saved ? (JSON.parse(saved) as Partial<PortfolioStoredState>) : null;
+  } catch {
+    return null;
+  }
+}
 
 const SECTOR_COLORS = [
   "#3b82f6", // blue
@@ -49,21 +76,17 @@ const SECTOR_COLORS = [
 ];
 
 export function PortfolioView() {
-  const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
-  const [tickerInput, setTickerInput] = useState("");
-  const [amountInput, setAmountInput] = useState("");
+  const t = useT();
+  const [storedUiState] = useState(loadPortfolioStoredState);
+  const [holdings, setHoldings] = useState<PortfolioHolding[]>(loadStoredHoldings);
+  const [tickerInput, setTickerInput] = useState(storedUiState?.tickerInput ?? "");
+  const [amountInput, setAmountInput] = useState(storedUiState?.amountInput ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  const [diagnosis, setDiagnosis] = useState<PortfolioDiagnosis | null>(null);
+  const [diagnosis, setDiagnosis] = useState<PortfolioDiagnosis | null>(
+    storedUiState?.diagnosis ?? null
+  );
   const [loading, setLoading] = useState(false);
-
-  // 从 localStorage 加载持仓
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setHoldings(JSON.parse(saved));
-    } catch {}
-  }, []);
 
   // 持仓变化时持久化
   useEffect(() => {
@@ -71,6 +94,15 @@ export function PortfolioView() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(holdings));
     } catch {}
   }, [holdings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        PORTFOLIO_UI_STORAGE_KEY,
+        JSON.stringify({ tickerInput, amountInput, diagnosis })
+      );
+    } catch {}
+  }, [tickerInput, amountInput, diagnosis]);
 
   // 总仓位金额
   const totalAmount = holdings.reduce((sum, h) => sum + (h.amount || 0), 0);
@@ -87,15 +119,15 @@ export function PortfolioView() {
     const ticker = tickerInput.trim().toUpperCase();
     const amount = parseFloat(amountInput);
     if (!ticker) {
-      setError("Ticker is required");
+      setError(t("tickerRequired"));
       return;
     }
     if (holdings.some((h) => h.ticker === ticker)) {
-      setError("Already added");
+      setError(t("compareAlready"));
       return;
     }
     if (holdings.length >= 15) {
-      setError("Max 15 holdings");
+      setError(t("portfolioMax"));
       return;
     }
     setHoldings([
@@ -123,7 +155,7 @@ export function PortfolioView() {
   };
 
   const clearAll = () => {
-    if (confirm("Remove all holdings?")) {
+    if (confirm(t("portfolioRemoveConfirm"))) {
       setHoldings([]);
       setDiagnosis(null);
     }
@@ -131,7 +163,7 @@ export function PortfolioView() {
 
   const runDiagnosis = async () => {
     if (computedHoldings.length === 0) {
-      setError("Add at least one holding");
+      setError(t("portfolioNeedHolding"));
       return;
     }
     setLoading(true);
@@ -142,7 +174,7 @@ export function PortfolioView() {
       );
       setDiagnosis(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Diagnosis failed");
+      setError(e instanceof Error ? e.message : t("portfolioDiagnosisFailed"));
     } finally {
       setLoading(false);
     }
@@ -155,12 +187,11 @@ export function PortfolioView() {
         <div className="flex items-center gap-2 mb-1">
           <Briefcase className="w-6 h-6 text-blue-600 dark:text-blue-400" />
           <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-            💼 My Portfolio · AI Diagnosis
+            💼 {t("portfolioHeaderTitle")}
           </h3>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Enter your holdings to get a weighted risk diagnosis. Stored locally on
-          your browser.
+          {t("portfolioHeaderSubtitle")}
         </p>
       </div>
 
@@ -171,7 +202,7 @@ export function PortfolioView() {
             value={tickerInput}
             onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === "Enter" && addHolding()}
-            placeholder="Ticker (AAPL, 600519...)"
+            placeholder={t("portfolioTickerPh")}
             className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
           />
           <input
@@ -179,7 +210,7 @@ export function PortfolioView() {
             value={amountInput}
             onChange={(e) => setAmountInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addHolding()}
-            placeholder="Position size ($, optional)"
+            placeholder={t("portfolioAmountPh")}
             className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
           />
           <button
@@ -187,7 +218,7 @@ export function PortfolioView() {
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
-            Add
+            {t("portfolioAdd")}
           </button>
         </div>
         {error && (
@@ -237,10 +268,10 @@ export function PortfolioView() {
               onClick={clearAll}
               className="text-xs text-slate-500 hover:text-rose-600 dark:hover:text-rose-400"
             >
-              Clear all
+              {t("portfolioClearAll")}
             </button>
             <div className="text-sm">
-              <span className="text-slate-500 dark:text-slate-400">Total: </span>
+              <span className="text-slate-500 dark:text-slate-400">{t("portfolioTotal")}: </span>
               <span className="font-bold tabular-nums text-slate-900 dark:text-slate-100">
                 ${totalAmount.toLocaleString()}
               </span>
@@ -261,7 +292,7 @@ export function PortfolioView() {
           ) : (
             <TrendingUp className="w-5 h-5" />
           )}
-          {loading ? "Analyzing portfolio..." : "🔍 AI Diagnose My Portfolio"}
+          {loading ? t("portfolioAnalyzing") : `🔍 ${t("portfolioDiagnose")}`}
         </button>
       </div>
 
@@ -278,7 +309,7 @@ export function PortfolioView() {
               <ExportPDFButton
                 targetId="portfolio-diagnosis"
                 filename="portfolio-diagnosis.pdf"
-                label="Export PDF"
+                label={t("exportPdf")}
               />
             </div>
 
@@ -294,6 +325,7 @@ export function PortfolioView() {
 // 诊断结果展示
 // ─────────────────────────────────────────
 function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
+  const t = useT();
   const score = data.weighted_risk_score ?? 0;
   const level = data.weighted_risk_level || "low";
   const levelStyle = {
@@ -310,8 +342,8 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
   }));
 
   // 区域饼图数据
-  const geoPieData = data.geo_distribution.map((g, i) => ({
-    name: g.market === "US" ? "US Stocks" : "China A-Shares",
+  const geoPieData = data.geo_distribution.map((g) => ({
+    name: g.market === "US" ? t("usMarket") : t("cnMarket"),
     value: g.weight_pct,
     color: g.market === "US" ? "#3b82f6" : "#ef4444",
   }));
@@ -324,17 +356,20 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
           <div className="text-center">
             <div className="text-6xl font-bold tabular-nums">{score}</div>
             <div className="text-xs uppercase tracking-wide opacity-80 mt-1">
-              Portfolio Risk / 100
+              {t("portfolioWeightedRisk")}
             </div>
             <div className="text-base font-semibold mt-2 capitalize">
-              {level} Risk
+              {level === "high"
+                ? t("riskHigh")
+                : level === "medium"
+                  ? t("riskMedium")
+                  : t("riskLow")}
             </div>
           </div>
           <div className="md:col-span-2">
             <p className="text-base leading-relaxed mb-2">{data.summary}</p>
             <p className="text-xs opacity-75 italic">
-              Diagnostic only — not investment advice. All conclusions based on
-              public financial data.
+              {t("portfolioPublicDataDisclaimer")}
             </p>
           </div>
         </div>
@@ -345,7 +380,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
         <div>
           <h4 className="font-bold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            Individual Stock Signals ({data.individual_signals.length})
+            {t("portfolioSignals")} ({data.individual_signals.length})
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {data.individual_signals.map((s, i) => {
@@ -416,7 +451,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5">
           <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
             <Layers className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            Sector Concentration
+            {t("portfolioSectorConcentration")}
           </h4>
           <div className="grid grid-cols-[1fr_1.2fr] gap-4 items-center">
             <div className="h-48">
@@ -479,7 +514,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5">
           <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
             <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            Geographic Distribution
+            {t("portfolioGeoDistribution")}
           </h4>
           <div className="grid grid-cols-[1fr_1.2fr] gap-4 items-center">
             <div className="h-48">
@@ -519,7 +554,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
                       style={{ backgroundColor: g.market === "US" ? "#3b82f6" : "#ef4444" }}
                     />
                     <span className="text-slate-700 dark:text-slate-300">
-                      {g.market === "US" ? "US Stocks" : "China A-Shares"}
+                      {g.market === "US" ? t("usMarket") : t("cnMarket")}
                     </span>
                   </div>
                   <span className="font-medium tabular-nums text-slate-900 dark:text-slate-100">
@@ -535,15 +570,15 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
       {/* 持仓明细 */}
       <div>
         <h4 className="font-bold text-slate-900 dark:text-slate-100 mb-3">
-          Holdings Detail
+          {t("portfolioHoldings")}
         </h4>
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div className="grid grid-cols-[80px_1fr_120px_80px_120px] gap-3 px-4 py-2.5 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-            <div>Ticker</div>
-            <div>Name</div>
-            <div>Sector</div>
-            <div className="text-right">Weight</div>
-            <div className="text-right">Risk Score</div>
+            <div>{t("portfolioTickerCol")}</div>
+            <div>{t("portfolioNameCol")}</div>
+            <div>{t("portfolioSectorCol")}</div>
+            <div className="text-right">{t("portfolioWeightCol")}</div>
+            <div className="text-right">{t("compareRiskScore")}</div>
           </div>
           {data.holdings_detail.map((h) => {
             const dotColor =
@@ -591,7 +626,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
       {/* 错误信息 */}
       {data.errors.length > 0 && (
         <div className="rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-200">
-          <div className="font-semibold mb-1">Some data couldn&apos;t be loaded:</div>
+          <div className="font-semibold mb-1">{t("portfolioSomeDataMissing")}</div>
           {data.errors.map((e, i) => (
             <div key={i}>· {e}</div>
           ))}

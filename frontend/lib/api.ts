@@ -344,6 +344,7 @@ export interface DCFResult {
   net_debt: number | null;
   terminal_value_pct: number | null;
   implied_growth_rate: number | null;
+  valuation_context: ValuationContext | null;
   wacc_breakdown: WaccBreakdown | null;
   warning: string | null;
   assumptions: {
@@ -356,12 +357,47 @@ export interface DCFResult {
   error: string | null;
 }
 
+export interface ValuationContext {
+  forward_pe: number | null;
+  peg_ratio: number | null;
+  ev_to_sales: number | null;
+  ev_to_revenue_growth: number | null;
+  revenue_growth: number | null;
+  earnings_growth: number | null;
+  gross_margin: number | null;
+  operating_margin: number | null;
+  margin_trend: {
+    gross_margin: { year: string; value: number | null }[];
+    operating_margin: { year: string; value: number | null }[];
+  };
+  implied_growth_rate: number | null;
+  analyst_target?: {
+    mean_price: number | null;
+    median_price: number | null;
+    low_price: number | null;
+    high_price: number | null;
+    recommendation: string | null;
+    opinion_count: number | null;
+    entries: {
+      date: string | null;
+      firm: string | null;
+      to_grade: string | null;
+      from_grade: string | null;
+      action: string | null;
+    }[];
+  };
+  is_high_growth: boolean;
+  dcf_stability: "unstable" | "moderate";
+}
+
 export interface WaccBreakdown {
   discount_rate: number;
   raw_wacc: number;
   risk_free_rate: number;
   risk_free_source: string;
+  raw_beta?: number;
   beta: number;
+  beta_adjustment?: string;
   equity_risk_premium: number;
   cost_of_equity: number;
   debt_spread: number;
