@@ -9,7 +9,7 @@
 
 `fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It is built for retail investors who want **honest financial analysis grounded in real data, explicit uncertainty, and zero buy/sell advice**.
 
-It combines public-market data, quantitative risk models, an interactive market explorer, sector-level AI analysis, a two-stage DCF model, portfolio diagnostics, and LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
+It combines public-market data, quantitative risk models, behavior-first market heatmaps, sector-level AI analysis, multi-lens valuation context, portfolio diagnostics, and LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
 
 ![fin-agent-pro product preview](docs/assets/readme-hero.svg)
 
@@ -39,11 +39,12 @@ Most retail finance tools either show raw ratios without context or ask an AI mo
 - Run explicit risk models before asking the LLM to explain the results.
 - Surface red flags such as solvency stress, earnings-manipulation risk, weak cash conversion, and valuation pressure.
 - Treat sector questions as sector questions — mapping the move, the key companies driving it, and what still cannot be known.
+- Treat valuation as a disagreement map, not a single answer: DCF, market price, Wall Street targets, growth, margins, and multiples can all point in different directions.
 - Keep user keys and portfolio data local wherever possible.
 
 The result is a practical analyst-style workflow:
 
-**market context -> company fundamentals -> risk model -> AI explanation -> explicit uncertainty -> exportable report**
+**market context -> company fundamentals -> risk model -> valuation context -> AI explanation -> explicit uncertainty -> exportable report**
 
 ## Product Highlights
 
@@ -51,12 +52,35 @@ The result is a practical analyst-style workflow:
 | --- | --- |
 | **AI Financial Analysis** | Ask about a company in natural language and get a structured risk read with financial context, red flags, and plain-English interpretation. |
 | **Sector Radar** | Open any sector card to inspect the move, then ask AI for a sector-level read of the drivers, key companies, and remaining unknowns. |
+| **Behavior Heatmap** | “News lags. Trading behavior doesn't.” See where capital attention and volatility are clustering now — not what to buy, but where to look. |
 | **Market Explorer** | Click market indices, heatmap bubbles, or sector rankings to inspect interactive 90-day movement charts. |
 | **Risk Dashboard** | Altman Z-Score, Beneish M-Score, cash-flow quality, receivables checks, and five-dimension health scoring. |
-| **Two-Stage DCF** | 10-year DCF model with WACC build-up, normalized FCF, net debt adjustment, terminal value share, sensitivity cases, and implied-growth reverse DCF. |
+| **Valuation Context** | 10-year two-stage DCF plus WACC build-up, implied-growth reverse DCF, Forward P/E, PEG, EV/Sales, EV/Revenue Growth, margin trends, and Wall Street target-price consensus. |
+| **High-Growth Caveats** | For hyper-growth companies, DCF is clearly labeled as unstable and treated as a scenario test rather than a target-price verdict. |
 | **Portfolio Diagnostic** | Weighted portfolio risk, sector concentration, geographic exposure, and per-holding warning signals. |
 | **Multi-Company Compare** | Compare 2-4 companies side by side across financials, valuation, and risk dimensions. |
+| **Local Workspace Memory** | Portfolio holdings, compare tickers, DCF assumptions/results, and analysis inputs are restored when you return to a workflow. |
 | **PDF Export** | Export single-company reports, compare reports, and portfolio diagnostics. |
+
+## Valuation Philosophy
+
+`fin-agent-pro` does not pretend that one model can tell you what a company is “really” worth. The valuation page is designed to show disagreement:
+
+```text
+Our DCF scenario      vs.      Current market price      vs.      Wall St. target
+```
+
+For a high-growth stock, that spread is often the signal. The app places DCF next to Forward P/E, PEG, EV/Sales, EV/Revenue Growth, revenue growth, earnings growth, gross margin, operating margin, market-implied growth, and analyst target-price consensus.
+
+When a company shows high-growth or high-volatility traits, DCF is explicitly marked as **extremely unstable**. The intrinsic value is presented as a scenario output, not a verdict.
+
+Analyst targets are treated the same way: useful as a second opinion, but not as truth. If Yahoo Finance provides recent firm-level rating actions, the Wall Street target card can open a side drawer with the available coverage history. If it only provides aggregate consensus, the UI says so instead of inventing precision.
+
+## Market Heatmap Principle
+
+> **News lags. Trading behavior doesn't.**
+
+The sector heatmap is built around behavior, not headlines. Bigger bubbles mean more market attention; deeper colors mean higher volatility. It is not a buy/sell signal. It is a map of where to look next.
 
 ## Data Coverage
 
@@ -68,7 +92,7 @@ The result is a practical analyst-style workflow:
 
 Caching policy:
 
-- Market quotes and sector data: **30 minutes**
+- Market quotes, sector data, and behavior heatmap inputs: **30 minutes**
 - Financial statements from FMP: **7 days**
 - Stale fallback cache: keeps the UI usable when public data providers block or fail
 
@@ -183,14 +207,16 @@ Open `http://localhost:3000`.
 2. Click an index, sector bubble, or sector ranking row to inspect the interactive movement chart.
 3. From a sector card, open **Sector Radar** to understand the move, its likely drivers, and the key companies behind it.
 4. Open **AI Analysis** for a full-page company-level financial report workspace.
-5. Use **DCF Valuation** for two-stage intrinsic-value modeling.
+5. Use **Valuation** to compare DCF, market price, Wall Street targets, multiples, growth, and margin quality.
 6. Use **Portfolio** to diagnose concentration and weighted risk.
-7. Export reports to PDF when you need a snapshot.
+7. Return to any workflow without re-entering your previous tickers or assumptions.
+8. Export reports to PDF when you need a snapshot.
 
 ## Privacy Model
 
 - LLM provider API keys are stored in your browser `localStorage`.
 - Portfolio holdings are stored locally in your browser.
+- DCF assumptions/results, compare tickers/results, and analysis workspace inputs are stored locally for workflow continuity.
 - No user accounts are required.
 - No tracking or analytics are included.
 - Backend `.env` values are local configuration and should not be committed.
@@ -204,6 +230,9 @@ Open `http://localhost:3000`.
 - [x] SEC EDGAR ingestion for US equities
 - [x] FMP fallback + persistent stale cache
 - [x] Two-stage DCF with WACC build-up and implied-growth reverse DCF
+- [x] Valuation context with analyst targets, multiples, margin trends, and high-growth caveats
+- [x] Behavior-first sector heatmap messaging across US, China A, and Hong Kong market pages
+- [x] Local workflow memory for valuation, compare, analysis, and portfolio modules
 - [ ] Add automated tests for risk and DCF models
 - [ ] Add deployment docs for Vercel + Render
 - [ ] Add CI checks for backend compile and frontend lint/typecheck
