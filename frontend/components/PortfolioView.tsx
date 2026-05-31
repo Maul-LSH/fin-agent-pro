@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase,
@@ -21,6 +21,10 @@ import {
   Globe,
   Layers,
   TrendingUp,
+  ArrowLeft,
+  ShieldCheck,
+  PieChart as PieChartIcon,
+  Workflow,
 } from "lucide-react";
 import {
   PieChart,
@@ -82,11 +86,22 @@ export function PortfolioView() {
   const [tickerInput, setTickerInput] = useState(storedUiState?.tickerInput ?? "");
   const [amountInput, setAmountInput] = useState(storedUiState?.amountInput ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [compactControls, setCompactControls] = useState(false);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
 
   const [diagnosis, setDiagnosis] = useState<PortfolioDiagnosis | null>(
     storedUiState?.diagnosis ?? null
   );
   const [loading, setLoading] = useState(false);
+  const workspaceActive =
+    inputFocused ||
+    Boolean(tickerInput.trim()) ||
+    Boolean(amountInput.trim()) ||
+    holdings.length > 0 ||
+    loading ||
+    Boolean(error) ||
+    Boolean(diagnosis);
 
   // 持仓变化时持久化
   useEffect(() => {
@@ -180,55 +195,110 @@ export function PortfolioView() {
     }
   };
 
-  return (
-    <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-      {/* 头部 */}
-      <div className="p-6 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2 mb-1">
-          <Briefcase className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-            💼 {t("portfolioHeaderTitle")}
-          </h3>
-        </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          {t("portfolioHeaderSubtitle")}
-        </p>
-      </div>
+  useEffect(() => {
+    const onScroll = () => setCompactControls(workspaceActive && window.scrollY > 160);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [workspaceActive]);
 
-      {/* 持仓输入 */}
-      <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2 mb-3">
+  const backToIntro = () => {
+    setHoldings([]);
+    setDiagnosis(null);
+    setError(null);
+    setLoading(false);
+    setTickerInput("");
+    setAmountInput("");
+    setInputFocused(false);
+  };
+
+  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
+    if (workspaceActive) {
+      backToIntro();
+    }
+  };
+
+  return (
+    <section className="relative" onMouseDownCapture={handleBlankMouseDown}>
+      <motion.div
+        animate={{
+          opacity: workspaceActive ? 0.2 : 1,
+          filter: workspaceActive ? "blur(8px)" : "blur(0px)",
+        }}
+        transition={{ duration: 0.35 }}
+        className={workspaceActive ? "h-[320px] overflow-hidden" : ""}
+      >
+        <PortfolioIntro />
+      </motion.div>
+
+      <motion.div
+        layout
+        className={
+          workspaceActive
+            ? "sticky top-20 z-30 mx-auto -mt-72 max-w-5xl"
+            : "relative z-20 mx-auto -mt-40 max-w-4xl"
+        }
+      >
+      <div
+        ref={controlsRef}
+        onClick={(e) => e.stopPropagation()}
+        className={`rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-xl shadow-slate-200/50 dark:shadow-black/30 backdrop-blur-2xl transition-colors ${
+          compactControls ? "bg-white/45 dark:bg-slate-950/45" : "bg-white/85 dark:bg-slate-950/85"
+        }`}
+      >
+        {workspaceActive && (
+          <button
+            type="button"
+            onClick={backToIntro}
+            className="mb-3 inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-white transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t("analysisBackToIntro")}
+          </button>
+        )}
+        <div
+          className={`grid grid-cols-1 gap-2 mb-3 ${
+            compactControls ? "md:grid-cols-2" : "md:grid-cols-[1fr_1fr_auto]"
+          }`}
+        >
           <input
             value={tickerInput}
+            onFocus={() => setInputFocused(true)}
             onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === "Enter" && addHolding()}
             placeholder={t("portfolioTickerPh")}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
+            className={`px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none ${
+              compactControls ? "bg-white/60 dark:bg-slate-950/55" : "bg-white dark:bg-slate-800"
+            }`}
           />
           <input
             type="number"
             value={amountInput}
+            onFocus={() => setInputFocused(true)}
             onChange={(e) => setAmountInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addHolding()}
             placeholder={t("portfolioAmountPh")}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
+            className={`px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none ${
+              compactControls ? "bg-white/60 dark:bg-slate-950/55" : "bg-white dark:bg-slate-800"
+            }`}
           />
-          <button
+          {!compactControls && <button
             onClick={addHolding}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
             {t("portfolioAdd")}
-          </button>
+          </button>}
         </div>
-        {error && (
+        {!compactControls && error && (
           <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
         )}
-      </div>
 
       {/* 持仓列表 */}
-      {computedHoldings.length > 0 && (
-        <div className="p-6 space-y-2">
+      {!compactControls && computedHoldings.length > 0 && (
+        <div className="mt-4 space-y-2">
           {computedHoldings.map((h, i) => (
             <motion.div
               key={h.ticker}
@@ -281,7 +351,8 @@ export function PortfolioView() {
       )}
 
       {/* 诊断按钮 */}
-      <div className="px-6 pb-6">
+      {!compactControls && (
+      <div className="mt-4">
         <button
           onClick={runDiagnosis}
           disabled={loading || computedHoldings.length === 0}
@@ -292,9 +363,12 @@ export function PortfolioView() {
           ) : (
             <TrendingUp className="w-5 h-5" />
           )}
-          {loading ? t("portfolioAnalyzing") : `🔍 ${t("portfolioDiagnose")}`}
+          {loading ? t("portfolioAnalyzing") : t("portfolioDiagnose")}
         </button>
       </div>
+      )}
+      </div>
+      </motion.div>
 
       {/* 诊断结果 */}
       <AnimatePresence>
@@ -303,7 +377,7 @@ export function PortfolioView() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             id="portfolio-diagnosis"
-            className="p-6 pt-0 space-y-6"
+            className="mt-10 space-y-8"
           >
             <div className="flex justify-end">
               <ExportPDFButton
@@ -317,6 +391,92 @@ export function PortfolioView() {
           </motion.div>
         )}
       </AnimatePresence>
+    </section>
+  );
+}
+
+function PortfolioIntro() {
+  const t = useT();
+  const items = [
+    {
+      icon: ShieldCheck,
+      title: t("portfolioIntroRiskTitle"),
+      body: t("portfolioIntroRiskBody"),
+    },
+    {
+      icon: PieChartIcon,
+      title: t("portfolioIntroExposureTitle"),
+      body: t("portfolioIntroExposureBody"),
+    },
+    {
+      icon: Workflow,
+      title: t("portfolioIntroOutputTitle"),
+      body: t("portfolioIntroOutputBody"),
+    },
+  ];
+
+  return (
+    <div className="min-h-[calc(100vh-4rem)] pb-56">
+      <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 dark:border-blue-900 bg-blue-50/80 dark:bg-blue-950/30 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+        <Briefcase className="h-4 w-4" />
+        {t("portfolioIntroEyebrow")}
+      </div>
+      <div className="mt-10 grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+        <div>
+          <h1 className="max-w-4xl text-4xl md:text-6xl font-bold tracking-tight text-slate-950 dark:text-white">
+            {t("portfolioIntroTitle")}
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+            {t("portfolioIntroBody")}
+          </p>
+        </div>
+        <div className="grid gap-3">
+          {[t("portfolioIntroFlow1"), t("portfolioIntroFlow2"), t("portfolioIntroFlow3")].map((text) => (
+            <div key={text} className="border-l-2 border-slate-200 dark:border-slate-800 py-3 pl-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {text}
+            </div>
+          ))}
+        </div>
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 p-5">
+          <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            {t("portfolioIntroExampleLabel")}
+          </div>
+          <div className="mt-4 grid grid-cols-[140px_1fr] gap-5 items-center">
+            <div className="relative aspect-square rounded-full bg-[conic-gradient(#3b82f6_0_42%,#10b981_42%_68%,#f59e0b_68%_84%,#ef4444_84%_100%)]">
+              <div className="absolute inset-[24%] rounded-full bg-white dark:bg-slate-950 flex items-center justify-center text-center">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {t("portfolioIntroPieCenter")}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2 text-sm">
+              {[
+                ["#3b82f6", t("portfolioIntroExampleTech")],
+                ["#10b981", t("portfolioIntroExampleConsumer")],
+                ["#f59e0b", t("portfolioIntroExampleCashflow")],
+                ["#ef4444", t("portfolioIntroExampleRisk")],
+              ].map(([color, label]) => (
+                <div key={label} className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            {t("portfolioIntroExampleBody")}
+          </p>
+        </div>
+      </div>
+      <div className="mt-16 grid gap-4 md:grid-cols-3">
+        {items.map(({ icon: Icon, title, body }) => (
+          <div key={title} className="border-t border-slate-200 dark:border-slate-800 pt-5">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">{title}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">{body}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -500,7 +660,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
                     </span>
                     {s.warning && (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 whitespace-nowrap">
-                        ⚠️ {s.warning}
+                        {s.warning}
                       </span>
                     )}
                   </div>

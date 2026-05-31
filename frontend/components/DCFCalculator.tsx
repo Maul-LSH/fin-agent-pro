@@ -18,6 +18,9 @@ import {
   Sparkles,
   AlertTriangle,
   X,
+  ArrowLeft,
+  Workflow,
+  BarChart3,
 } from "lucide-react";
 import {
   BarChart,
@@ -38,6 +41,7 @@ import {
   type WaccBreakdown,
 } from "@/lib/api";
 import { useT } from "@/lib/AppContext";
+import { ExportPDFButton } from "./ExportPDFButton";
 
 const DCF_STORAGE_KEY = "fin-agent-dcf-state";
 const DCF_CHANGE_EVENT = "fin-agent-dcf-state-change";
@@ -108,7 +112,19 @@ export function DCFCalculator() {
   const [assumptionsLoading, setAssumptionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [compactControls, setCompactControls] = useState(false);
   const skipNextAssumptionApplyRef = useRef(false);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const workspaceActive =
+    inputFocused ||
+    Boolean(result) ||
+    loading ||
+    Boolean(error) ||
+    tickerOverride !== undefined ||
+    discountRateOverride !== undefined ||
+    growthRateOverride !== undefined ||
+    terminalGrowthOverride !== undefined;
 
   useEffect(() => {
     if (!hydrated) return;
@@ -192,45 +208,96 @@ export function DCFCalculator() {
     }
   };
 
+  useEffect(() => {
+    const onScroll = () => setCompactControls(workspaceActive && window.scrollY > 160);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [workspaceActive]);
+
+  const backToIntro = () => {
+    setResultOverride(null);
+    setSensitivityOverride(null);
+    setError(null);
+    setLoading(false);
+    setInputFocused(false);
+  };
+
+  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
+    if (workspaceActive) {
+      backToIntro();
+    }
+  };
+
   return (
-    <div className="relative z-10 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-      <div className="p-6 border-b border-slate-200 dark:border-slate-800 rounded-t-3xl">
-        <div className="flex items-center gap-2 mb-1">
-          <Calculator className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-            🧮 {t("dcfHeaderTitle")}
-          </h3>
-        </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          {t("dcfSubtitle")}
-        </p>
-      </div>
+    <section className="relative z-10" onMouseDownCapture={handleBlankMouseDown}>
+      <motion.div
+        animate={{
+          opacity: workspaceActive ? 0.2 : 1,
+          filter: workspaceActive ? "blur(8px)" : "blur(0px)",
+        }}
+        transition={{ duration: 0.35 }}
+        className={workspaceActive ? "h-[320px] overflow-hidden" : ""}
+      >
+        <DCFIntro />
+      </motion.div>
+
+      <motion.div
+        layout
+        className={
+          workspaceActive
+            ? "sticky top-20 z-30 mx-auto -mt-72 max-w-5xl"
+            : "relative z-20 mx-auto -mt-40 max-w-4xl"
+        }
+      >
+    <div
+      ref={controlsRef}
+      onClick={(e) => e.stopPropagation()}
+      className={`rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-xl shadow-slate-200/50 dark:shadow-black/30 backdrop-blur-2xl transition-colors ${
+        compactControls ? "bg-white/45 dark:bg-slate-950/45" : "bg-white/85 dark:bg-slate-950/85"
+      }`}
+    >
+      {workspaceActive && !compactControls && (
+        <button
+          type="button"
+          onClick={backToIntro}
+          className="mb-3 inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-white transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t("analysisBackToIntro")}
+        </button>
+      )}
 
       {/* 输入区 */}
-      <div className="p-6 space-y-4 bg-slate-50/50 dark:bg-slate-800/30">
+      <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+          <label className={`${compactControls ? "sr-only" : "block"} text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5`}>
             {t("dcfTicker")}
           </label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               value={ticker}
+              onFocus={() => setInputFocused(true)}
               onChange={(e) => setTickerOverride(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === "Enter" && runDCF()}
               placeholder={t("dcfTickerPlaceholder")}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
+              className={`w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none ${
+                compactControls ? "bg-white/60 dark:bg-slate-950/55" : "bg-white dark:bg-slate-800"
+              }`}
             />
           </div>
         </div>
 
-        {assumptions?.error && (
+        {!compactControls && assumptions?.error && (
           <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-sm">
             {assumptions.error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {!compactControls && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <SliderInput
             label={t("dcfWacc")}
             value={discountRate}
@@ -286,9 +353,9 @@ export function DCFCalculator() {
             }
             onChange={setTerminalGrowthOverride}
           />
-        </div>
+        </div>}
 
-        {assumptions?.wacc_breakdown &&
+        {!compactControls && assumptions?.wacc_breakdown &&
           (assumptions.wacc_breakdown.beta >= 1.4 || growthRate >= 25) && (
             <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-sm flex gap-2">
               <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
@@ -299,14 +366,14 @@ export function DCFCalculator() {
             </div>
           )}
 
-        {assumptions?.warning && (
+        {!compactControls && assumptions?.warning && (
           <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-sm flex gap-2">
             <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{translateDcfWarning(assumptions.warning, t)}</span>
           </div>
         )}
 
-        <button
+        {!compactControls && <button
           onClick={runDCF}
           disabled={loading || !ticker.trim() || Boolean(assumptions?.error)}
           className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl font-semibold flex items-center justify-center gap-2"
@@ -317,14 +384,16 @@ export function DCFCalculator() {
             <Calculator className="w-5 h-5" />
           )}
           {loading ? t("dcfRunning") : t("dcfRun")}
-        </button>
+        </button>}
 
-        {error && (
+        {!compactControls && error && (
           <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm">
             {error}
           </div>
         )}
       </div>
+    </div>
+      </motion.div>
 
       {/* 结果区 */}
       <AnimatePresence>
@@ -332,8 +401,16 @@ export function DCFCalculator() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-6 space-y-6"
+            id="valuation-report"
+            className="mt-10 space-y-8"
           >
+            <div className="flex justify-end">
+              <ExportPDFButton
+                targetId="valuation-report"
+                filename={`valuation-${ticker.toUpperCase()}.pdf`}
+                label={t("exportPdf")}
+              />
+            </div>
             {/* 主要结果卡片 */}
             <ValuationResultCard result={result} />
 
@@ -392,6 +469,103 @@ export function DCFCalculator() {
           </motion.div>
         )}
       </AnimatePresence>
+    </section>
+  );
+}
+
+function DCFIntro() {
+  const t = useT();
+  const items = [
+    { icon: Calculator, title: t("dcfIntroModelTitle"), body: t("dcfIntroModelBody") },
+    { icon: BarChart3, title: t("dcfIntroContextTitle"), body: t("dcfIntroContextBody") },
+    { icon: Workflow, title: t("dcfIntroOutputTitle"), body: t("dcfIntroOutputBody") },
+  ];
+
+  return (
+    <div className="min-h-[calc(100vh-4rem)] pb-56">
+      <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 dark:border-blue-900 bg-blue-50/80 dark:bg-blue-950/30 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+        <Calculator className="h-4 w-4" />
+        {t("dcfIntroEyebrow")}
+      </div>
+      <div className="mt-10">
+        <div>
+          <h1 className="max-w-4xl text-4xl md:text-6xl font-bold tracking-tight text-slate-950 dark:text-white">
+            {t("dcfIntroTitle")}
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+            {t("dcfIntroBody")}
+          </p>
+        </div>
+        <div className="mt-10 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 p-5">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {t("dcfIntroExampleLabel")}
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">
+              {t("dcfIntroFormulaBody")}
+            </p>
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              {[
+                [t("dcfIntroExampleStep1"), "WACC"],
+                [t("dcfIntroExampleStep2"), "FCF"],
+                [t("dcfIntroExampleStep3"), "Value"],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-center">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
+                  <div className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-5 shadow-sm">
+            <div className="font-bold text-slate-900 dark:text-slate-100">
+              {t("dcfIntroWaccTitle")}
+            </div>
+            <div className="mt-4 space-y-2 text-sm">
+              {[
+                [t("dcfRiskFree"), "4.5%", t("dcfIntroSourceTreasury")],
+                [t("dcfRawBeta"), "2.24", t("dcfIntroSourceMarket")],
+                [t("dcfBeta"), "1.83", t("dcfIntroSourceAdjusted")],
+                [t("dcfEquityRiskPremium"), "6.0%", t("dcfIntroSourceAssumption")],
+              ].map(([label, value, source]) => (
+                <div key={label} className="grid grid-cols-[1fr_auto] gap-3">
+                  <span className="text-slate-600 dark:text-slate-400">{label}</span>
+                  <span className="font-mono text-slate-900 dark:text-slate-100">{value}</span>
+                  <span className="col-span-2 text-xs text-slate-400 dark:text-slate-500">{source}</span>
+                </div>
+              ))}
+            </div>
+            <div className="my-4 border-t border-slate-200 dark:border-slate-800" />
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <div className="text-slate-500 dark:text-slate-400">{t("dcfOurDcfAnswer")}</div>
+                <div className="mt-1 font-bold text-slate-900 dark:text-slate-100">$128</div>
+              </div>
+              <div>
+                <div className="text-slate-500 dark:text-slate-400">{t("dcfMarketAnswer")}</div>
+                <div className="mt-1 font-bold text-slate-900 dark:text-slate-100">$142</div>
+              </div>
+              <div>
+                <div className="text-slate-500 dark:text-slate-400">{t("dcfAnalystAnswer")}</div>
+                <div className="mt-1 font-bold text-slate-900 dark:text-slate-100">$151</div>
+              </div>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              {t("dcfIntroExampleBody")}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-16 grid gap-4 md:grid-cols-3">
+        {items.map(({ icon: Icon, title, body }) => (
+          <div key={title} className="border-t border-slate-200 dark:border-slate-800 pt-5">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">{title}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">{body}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

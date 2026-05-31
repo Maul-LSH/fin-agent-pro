@@ -12,6 +12,13 @@ import {
   Waves,
   Building2,
   CircleHelp,
+  ShieldCheck,
+  FileText,
+  Workflow,
+  SearchCheck,
+  Layers3,
+  BarChart3,
+  ArrowLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { apiClient, type AnalyzeResponse } from "@/lib/api";
@@ -80,10 +87,14 @@ export function AnalysisChat({
     shouldRestoreStoredState ? storedState?.result ?? null : null
   );
   const [error, setError] = useState<string | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [compactControls, setCompactControls] = useState(false);
   const initialRunRef = useRef<string | null>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
 
   const examples = lang === "en" ? EXAMPLE_QUERIES_EN : EXAMPLE_QUERIES_ZH;
   const isSectorMode = analysisMode === "sector";
+  const workspaceActive = inputFocused || Boolean(input.trim()) || loading || Boolean(result) || Boolean(error);
   const sectorTitle =
     initialQuery
       ?.replace(/^Analyze\s+/i, "")
@@ -133,6 +144,14 @@ export function AnalysisChat({
     }
   };
 
+  const handleBackToIntro = () => {
+    setResult(null);
+    setError(null);
+    setLoading(false);
+    setInput("");
+    setInputFocused(false);
+  };
+
   useEffect(() => {
     if (!initialQuery) return;
     if (autoRunInitialQuery && apiKey && initialRunRef.current !== initialQuery) {
@@ -142,67 +161,117 @@ export function AnalysisChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuery, autoRunInitialQuery, apiKey]);
 
+  useEffect(() => {
+    const onScroll = () => setCompactControls(workspaceActive && window.scrollY > 160);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [workspaceActive]);
+
+  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
+    if (workspaceActive) {
+      handleBackToIntro();
+    }
+  };
+
+  const queryComposer = (
+    <div className="relative">
+      <input
+        type="text"
+        value={input}
+        onFocus={() => setInputFocused(true)}
+        onBlur={() => {
+          if (!input.trim() && !loading && !result) setInputFocused(false);
+        }}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !loading) handleSubmit();
+        }}
+        disabled={loading}
+        placeholder={isSectorMode ? t("sectorChatPlaceholder") : t("chatPlaceholder")}
+        className={`w-full px-5 pr-14 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none transition-all text-base shadow-sm backdrop-blur-xl ${
+          compactControls
+            ? "py-3 bg-white/60 dark:bg-slate-950/55"
+            : "py-4 bg-white/95 dark:bg-slate-900/95"
+        }`}
+      />
+      <button
+        onClick={() => handleSubmit()}
+        disabled={loading || !input.trim()}
+        aria-label="Run analysis"
+        className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+      >
+        {loading ? (
+          <Loader2 className="w-5 h-5 animate-spin" />
+        ) : (
+          <Send className="w-5 h-5" />
+        )}
+      </button>
+    </div>
+  );
+
   return (
-    <section className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-            {t("chatTitle")}
-          </h3>
-        </div>
-        <button
-          onClick={onOpenSettings}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+    <section className="relative" onMouseDownCapture={handleBlankMouseDown}>
+      <motion.div
+        animate={{
+          opacity: workspaceActive ? 0.28 : 1,
+          filter: workspaceActive ? "blur(10px)" : "blur(0px)",
+          scale: workspaceActive ? 0.985 : 1,
+        }}
+        transition={{ duration: 0.35 }}
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[820px] bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.14),transparent_48%)]"
+      />
+
+      <motion.div
+        animate={{
+          opacity: workspaceActive ? 0.2 : 1,
+          filter: workspaceActive ? "blur(8px)" : "blur(0px)",
+        }}
+        transition={{ duration: 0.35 }}
+        className={workspaceActive ? "h-[320px] overflow-hidden" : "space-y-16"}
+      >
+        <AnalysisIntro
+          isSectorMode={isSectorMode}
+          onOpenSettings={onOpenSettings}
+          apiKey={apiKey}
+        />
+      </motion.div>
+
+      <motion.div
+        layout
+        className={
+          workspaceActive
+            ? "sticky top-20 z-30 mx-auto -mt-72 max-w-4xl px-0"
+            : "relative z-20 mx-auto -mt-36 max-w-3xl px-0"
+        }
+      >
+        <div
+          ref={controlsRef}
+          onClick={(e) => e.stopPropagation()}
+          className={`rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-3 shadow-xl shadow-slate-200/50 dark:shadow-black/30 backdrop-blur-2xl transition-colors ${
+            compactControls ? "bg-white/45 dark:bg-slate-950/45" : "bg-white/80 dark:bg-slate-950/80"
+          }`}
         >
-          <SettingsIcon className="w-4 h-4" />
-          {apiKey ? t("settingsBtn") : t("settingsBtnEmpty")}
-        </button>
-      </div>
-
-      <div className="rounded-3xl bg-gradient-to-br from-blue-50/50 via-white to-indigo-50/30 dark:from-blue-950/30 dark:via-slate-900 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/50 p-6 md:p-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-6">
-            <h4 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-              {isSectorMode ? t("sectorChatPrompt") : t("chatPrompt")}
-            </h4>
-            <p className="text-slate-600 dark:text-slate-400 text-sm">
-              {isSectorMode ? t("sectorChatHint") : t("chatHint")}
-            </p>
-          </div>
-
-          <div className="relative">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !loading) handleSubmit();
-              }}
-              disabled={loading}
-              placeholder={isSectorMode ? t("sectorChatPlaceholder") : t("chatPlaceholder")}
-              className="w-full px-5 py-4 pr-14 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none transition-all text-base shadow-sm"
-            />
+          {(result || error) && (
             <button
-              onClick={() => handleSubmit()}
-              disabled={loading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+              type="button"
+              onClick={handleBackToIntro}
+              className="mb-3 inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-white transition-colors"
             >
-              {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
+              <ArrowLeft className="h-4 w-4" />
+              {t("analysisBackToIntro")}
             </button>
-          </div>
-
-          {!loading && !result && (
+          )}
+          {queryComposer}
+          {!compactControls && !loading && !result && !input.trim() && !workspaceActive && (
             <div className="mt-4 flex flex-wrap gap-2 justify-center">
               {examples.map((q) => (
                 <button
                   key={q}
                   onClick={() => handleSubmit(q)}
-                  className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded-full transition-all"
+                  className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded-full transition-all"
                 >
                   {q}
                 </button>
@@ -210,7 +279,7 @@ export function AnalysisChat({
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
 
       <AnimatePresence>
         {loading && (
@@ -218,7 +287,7 @@ export function AnalysisChat({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center"
+            className="mx-auto mt-10 max-w-4xl border-y border-slate-200 dark:border-slate-800 py-10 text-center"
           >
             <div className="inline-flex items-center gap-3 text-slate-600 dark:text-slate-400">
               <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
@@ -234,7 +303,7 @@ export function AnalysisChat({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 p-5 flex gap-3"
+            className="mx-auto mt-10 max-w-4xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 p-5 flex gap-3"
           >
             <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
             <div>
@@ -258,22 +327,26 @@ export function AnalysisChat({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="space-y-4"
+            className="mt-10 space-y-8"
           >
             {/* PDF 导出按钮 */}
-            {result.company && !isSectorMode && (
+            {result && (
               <div className="flex justify-end">
                 <ExportPDFButton
                   targetId="analysis-report"
-                  filename={`analysis-${result.company.ticker}.pdf`}
+                  filename={
+                    result.company
+                      ? `analysis-${result.company.ticker}.pdf`
+                      : "sector-analysis.pdf"
+                  }
                   label={t("exportPdfReport")}
                 />
               </div>
             )}
 
-            <div id="analysis-report" className="space-y-4 bg-slate-50 dark:bg-slate-900 p-1 rounded-2xl">
+            <div id="analysis-report" className="space-y-8">
             {isSectorMode && (
-              <div className="overflow-hidden rounded-2xl border border-cyan-200/80 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),linear-gradient(135deg,#082f49,#0f172a_58%,#111827)] text-white dark:border-cyan-900/70">
+              <div className="overflow-hidden border-y border-cyan-200/80 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),linear-gradient(135deg,#082f49,#0f172a_58%,#111827)] text-white dark:border-cyan-900/70">
                 <div className="p-6 md:p-7">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
@@ -326,7 +399,7 @@ export function AnalysisChat({
             )}
 
             {result.company && result.intent && !isSectorMode && (
-              <div className="rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-700 text-white p-6">
+              <div className="bg-gradient-to-r from-slate-950 to-slate-800 dark:from-slate-900 dark:to-slate-800 text-white px-6 py-8 md:px-8">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
                     <div className="text-xs text-slate-400 mb-1">{t("identified")}</div>
@@ -341,17 +414,12 @@ export function AnalysisChat({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {result.intent.analysis_types.map((type) => {
-                      const labels: Record<string, string> = {
-                        financial: "📊",
-                        valuation: "💰",
-                        risk: "⚠️",
-                      };
                       return (
                         <span
                           key={type}
                           className="px-3 py-1 bg-white/10 rounded-full text-xs font-medium"
                         >
-                          {labels[type] || ""} {type}
+                          {type}
                         </span>
                       );
                     })}
@@ -388,8 +456,8 @@ export function AnalysisChat({
                   />
                 </div>
               )}
-              <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 md:p-8">
-                <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-8">
+                <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-5 flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   {isSectorMode ? t("sectorAiDetail") : t("aiDetail")}
                 </h4>
@@ -419,6 +487,158 @@ export function AnalysisChat({
         )}
       </AnimatePresence>
     </section>
+  );
+}
+
+function AnalysisIntro({
+  isSectorMode,
+  onOpenSettings,
+  apiKey,
+}: {
+  isSectorMode: boolean;
+  onOpenSettings: () => void;
+  apiKey: string;
+}) {
+  const t = useT();
+
+  const capabilitySections = [
+    {
+      icon: ShieldCheck,
+      title: t("analysisIntroRiskTitle"),
+      body: t("analysisIntroRiskBody"),
+      items: [
+        t("analysisIntroRiskItem1"),
+        t("analysisIntroRiskItem2"),
+        t("analysisIntroRiskItem3"),
+      ],
+    },
+    {
+      icon: Workflow,
+      title: t("analysisIntroMethodTitle"),
+      body: t("analysisIntroMethodBody"),
+      items: [
+        t("analysisIntroMethodItem1"),
+        t("analysisIntroMethodItem2"),
+        t("analysisIntroMethodItem3"),
+      ],
+    },
+    {
+      icon: FileText,
+      title: t("analysisIntroOutputTitle"),
+      body: t("analysisIntroOutputBody"),
+      items: [
+        t("analysisIntroOutputItem1"),
+        t("analysisIntroOutputItem2"),
+        t("analysisIntroOutputItem3"),
+      ],
+    },
+  ];
+
+  const workflow = [
+    {
+      icon: SearchCheck,
+      label: t("analysisIntroFlow1"),
+      detail: t("analysisIntroFlow1Body"),
+    },
+    {
+      icon: Layers3,
+      label: t("analysisIntroFlow2"),
+      detail: t("analysisIntroFlow2Body"),
+    },
+    {
+      icon: BarChart3,
+      label: t("analysisIntroFlow3"),
+      detail: t("analysisIntroFlow3Body"),
+    },
+  ];
+
+  return (
+    <div className="min-h-[calc(100vh-4rem)] pb-56">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 dark:border-blue-900 bg-blue-50/80 dark:bg-blue-950/30 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+          <Sparkles className="h-4 w-4" />
+          {t("analysisIntroEyebrow")}
+        </div>
+        <button
+          onClick={onOpenSettings}
+          className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+        >
+          <SettingsIcon className="w-4 h-4" />
+          {apiKey ? t("settingsBtn") : t("settingsBtnEmpty")}
+        </button>
+      </div>
+
+      <div className="mt-10 grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+        <div>
+          <motion.h2
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="max-w-4xl text-4xl md:text-6xl font-bold tracking-tight text-slate-950 dark:text-white"
+          >
+            {isSectorMode ? t("analysisIntroSectorTitle") : t("analysisIntroTitle")}
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.08 }}
+            className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300"
+          >
+            {isSectorMode ? t("analysisIntroSectorBody") : t("analysisIntroBody")}
+          </motion.p>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.12 }}
+          className="grid gap-3"
+        >
+          {workflow.map(({ icon: Icon, label, detail }) => (
+            <div
+              key={label}
+              className="border-l-2 border-slate-200 dark:border-slate-800 py-3 pl-4"
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                {label}
+              </div>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                {detail}
+              </p>
+            </div>
+          ))}
+        </motion.div>
+      </div>
+
+      <div className="mt-16 grid gap-4 md:grid-cols-3">
+        {capabilitySections.map(({ icon: Icon, title, body, items }, index) => (
+          <motion.div
+            key={title}
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.16 + index * 0.06 }}
+            className="border-t border-slate-200 dark:border-slate-800 pt-5"
+          >
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">
+              {title}
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">
+              {body}
+            </p>
+            <div className="mt-4 space-y-2">
+              {items.map((item) => (
+                <div key={item} className="flex gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -85,6 +85,33 @@ export interface RiskAssessment {
     description: string;
     metric?: string | number;
   }>;
+  risk_scenarios?: Array<{
+    id: string;
+    title: string;
+    risk_level: "low" | "medium" | "high";
+    score: number;
+    summary: string;
+    evidence: Array<{
+      label: string;
+      value: string | number;
+      interpretation: string;
+      severity: "high" | "medium" | "low";
+    }>;
+    disclosure_checks: Array<{
+      section: string;
+      focus: string;
+      status: string;
+    }>;
+    missing_data: string[];
+    next_steps: string[];
+  }>;
+  disclosure_checks?: Array<{
+    scenario_id: string;
+    scenario_title: string;
+    section: string;
+    focus: string;
+    status: string;
+  }>;
 }
 
 export interface AnalyzeResponse {

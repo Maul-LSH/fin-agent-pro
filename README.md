@@ -9,7 +9,7 @@
 
 `fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It is built for retail investors who want **honest financial analysis grounded in real data, explicit uncertainty, and zero buy/sell advice**.
 
-It combines public-market data, quantitative risk models, behavior-first market heatmaps, sector-level AI analysis, multi-lens valuation context, portfolio diagnostics, and LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
+It combines public-market data, statement-level risk cross-checks, quantitative models, behavior-first market heatmaps, sector-level AI analysis, multi-lens valuation context, portfolio diagnostics, and full-page LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
 
 ![fin-agent-pro product preview](docs/assets/readme-hero.svg)
 
@@ -36,31 +36,59 @@ It combines public-market data, quantitative risk models, behavior-first market 
 Most retail finance tools either show raw ratios without context or ask an AI model to summarize incomplete data with too much confidence. `fin-agent-pro` takes a more disciplined route:
 
 - Pull structured data from SEC EDGAR, Yahoo Finance, AkShare, and Financial Modeling Prep fallback endpoints.
-- Run explicit risk models before asking the LLM to explain the results.
-- Surface red flags such as solvency stress, earnings-manipulation risk, weak cash conversion, and valuation pressure.
+- Run explicit risk models and eight financial-statement cross-check scenarios before asking the LLM to explain the results.
+- Surface red flags such as solvency stress, earnings-manipulation risk, weak cash conversion, revenue-recognition pressure, inventory buildup, goodwill impairment risk, hidden debt, and valuation pressure.
 - Treat sector questions as sector questions — mapping the move, the key companies driving it, and what still cannot be known.
 - Treat valuation as a disagreement map, not a single answer: DCF, market price, Wall Street targets, growth, margins, and multiples can all point in different directions.
 - Keep user keys and portfolio data local wherever possible.
 
 The result is a practical analyst-style workflow:
 
-**market context -> company fundamentals -> risk model -> valuation context -> AI explanation -> explicit uncertainty -> exportable report**
+**market context -> company fundamentals -> statement cross-checks -> risk model -> valuation context -> AI explanation -> explicit uncertainty -> exportable full-page report**
 
 ## Product Highlights
 
 | Area | What It Does |
 | --- | --- |
-| **AI Financial Analysis** | Ask about a company in natural language and get a structured risk read with financial context, red flags, and plain-English interpretation. |
+| **AI Financial Analysis** | Ask about a company in natural language and get a full-page financial report with risk-control methods, statement evidence, red flags, disclosure-review prompts, and plain-English interpretation. |
 | **Sector Radar** | Open any sector card to inspect the move, then ask AI for a sector-level read of the drivers, key companies, and remaining unknowns. |
 | **Behavior Heatmap** | “News lags. Trading behavior doesn't.” See where capital attention and volatility are clustering now — not what to buy, but where to look. |
 | **Market Explorer** | Click market indices, heatmap bubbles, or sector rankings to inspect interactive 90-day movement charts. |
-| **Risk Dashboard** | Altman Z-Score, Beneish M-Score, cash-flow quality, receivables checks, and five-dimension health scoring. |
-| **Valuation Context** | 10-year two-stage DCF plus WACC build-up, implied-growth reverse DCF, Forward P/E, PEG, EV/Sales, EV/Revenue Growth, margin trends, and Wall Street target-price consensus. |
+| **Risk Dashboard** | Altman Z-Score, Beneish M-Score, cash-flow quality, receivables checks, five-dimension health scoring, and eight statement-risk scenarios with disclosure-note checklists. |
+| **Valuation Workspace** | 10-year two-stage DCF plus WACC build-up, data-source explanation, implied-growth reverse DCF, Forward P/E, PEG, EV/Sales, EV/Revenue Growth, margin trends, and Wall Street target-price consensus. |
 | **High-Growth Caveats** | For hyper-growth companies, DCF is clearly labeled as unstable and treated as a scenario test rather than a target-price verdict. |
-| **Portfolio Diagnostic** | Weighted portfolio risk, sector concentration, geographic exposure, and per-holding warning signals. |
-| **Multi-Company Compare** | Compare 2-4 companies side by side across financials, valuation, and risk dimensions. |
+| **Portfolio Diagnostic** | Weighted portfolio risk, pie-chart concentration views, sector exposure, geographic exposure, and per-holding warning signals. |
+| **Multi-Company Compare** | Compare 2-4 companies side by side with visual grids, health bars, best-value markers, financials, valuation, and risk dimensions. |
+| **Unified Workspaces** | AI analysis, valuation, portfolio diagnostics, and company comparison share the same interaction model: overview first, floating input controls, collapsible controls while reading, click-away return, and full-page results. |
 | **Local Workspace Memory** | Portfolio holdings, compare tickers, DCF assumptions/results, and analysis inputs are restored when you return to a workflow. |
-| **PDF Export** | Export single-company reports, compare reports, and portfolio diagnostics. |
+| **PDF Export** | Export AI analysis, valuation, comparison, and portfolio diagnostic reports. |
+
+## Statement-Risk Engine
+
+The risk engine now goes beyond single-model scoring. In addition to Altman, Beneish, cash-flow quality, and receivables checks, it runs eight statement-level scenarios:
+
+| Scenario | What It Cross-Checks |
+| --- | --- |
+| Fixed assets inflated | PPE changes, capex, depreciation rate, and revenue capacity. |
+| Inventory overstatement | Inventory growth, turnover days, revenue growth, cash conversion, and write-down prompts. |
+| Revenue inflation / early recognition | Revenue, receivables, contract liabilities, and cash collection. |
+| Paper profit vs. cash flow | Net income, operating cash flow, and working-capital causes. |
+| Off-balance-sheet / hidden debt | Interest cost, debt rollovers, payables pressure, guarantees, and contingencies. |
+| Margin and cost structure anomalies | Gross margin, SG&A ratio, product mix, capitalized expenses, and segment disclosure. |
+| Goodwill and intangibles impairment | Goodwill-to-equity, intangible-asset weight, acquisition premium, and impairment-test assumptions. |
+| Short-term liquidity deterioration | Current ratio, cash buffer, short debt vs. cash, and operating cash coverage. |
+
+Each scenario returns evidence, risk level, missing data, next steps, and the disclosure-note sections a user should review in the company's filings.
+
+## Workspace Interaction Model
+
+The main workflows now behave like proper analysis workspaces rather than small calculators:
+
+- Each page opens with a short overview explaining what the workflow is for and what output the user will get.
+- The input panel sits low on the first screen, then moves into a floating control bar once the user interacts.
+- While reading results, the floating controls collapse to translucent inputs so they do not block the report.
+- Clicking blank space outside the controls returns to the overview page.
+- Results occupy the full page and can be exported to PDF.
 
 ## Valuation Philosophy
 

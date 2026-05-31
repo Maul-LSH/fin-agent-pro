@@ -16,6 +16,9 @@ import {
   Activity,
   DollarSign,
   Target,
+  FileSearch,
+  ClipboardCheck,
+  CircleHelp,
 } from "lucide-react";
 import { useT } from "@/lib/AppContext";
 
@@ -55,6 +58,33 @@ interface RiskData {
   } | null;
   dimension_scores: DimensionScores;
   red_flags: RedFlag[];
+  risk_scenarios?: RiskScenario[];
+  disclosure_checks?: DisclosureCheck[];
+}
+
+interface RiskScenario {
+  id: string;
+  title: string;
+  risk_level: "low" | "medium" | "high";
+  score: number;
+  summary: string;
+  evidence: Array<{
+    label: string;
+    value: string | number;
+    interpretation: string;
+    severity: "high" | "medium" | "low";
+  }>;
+  disclosure_checks: DisclosureCheck[];
+  missing_data: string[];
+  next_steps: string[];
+}
+
+interface DisclosureCheck {
+  scenario_id?: string;
+  scenario_title?: string;
+  section: string;
+  focus: string;
+  status: string;
 }
 
 interface Props {
@@ -177,6 +207,30 @@ export function RiskDashboard({ data }: Props) {
         </motion.div>
       )}
 
+      {data.risk_scenarios && data.risk_scenarios.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="space-y-4"
+        >
+          <div>
+            <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <FileSearch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              {t("riskScenarioTitle")}
+            </h4>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              {t("riskScenarioSubtitle")}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {data.risk_scenarios.map((scenario, i) => (
+              <ScenarioCard key={scenario.id} scenario={scenario} index={i} />
+            ))}
+          </div>
+        </motion.section>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div
           initial={{ opacity: 0 }}
@@ -265,6 +319,121 @@ export function RiskDashboard({ data }: Props) {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+function ScenarioCard({ scenario, index }: { scenario: RiskScenario; index: number }) {
+  const t = useT();
+  const levelStyle = {
+    low: {
+      badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
+      ring: "border-emerald-200 dark:border-emerald-900",
+      dot: "bg-emerald-500",
+    },
+    medium: {
+      badge: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300",
+      ring: "border-amber-200 dark:border-amber-900",
+      dot: "bg-amber-500",
+    },
+    high: {
+      badge: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300",
+      ring: "border-rose-200 dark:border-rose-900",
+      dot: "bg-rose-500",
+    },
+  }[scenario.risk_level];
+
+  const topEvidence = scenario.evidence.slice(0, 3);
+  const disclosureChecks = scenario.disclosure_checks.slice(0, 3);
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.04 * index }}
+      className={`rounded-2xl border bg-white dark:bg-slate-900 ${levelStyle.ring} p-5`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${levelStyle.dot}`} />
+            <h5 className="font-semibold text-slate-900 dark:text-slate-100">
+              {scenario.title}
+            </h5>
+          </div>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            {scenario.summary}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold tabular-nums ${levelStyle.badge}`}>
+          {scenario.score}/100
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {topEvidence.map((item) => (
+          <div
+            key={`${scenario.id}-${item.label}`}
+            className="rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 p-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {item.label}
+              </span>
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                {item.value}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              {item.interpretation}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <ClipboardCheck className="w-4 h-4" />
+            {t("riskDisclosureChecks")}
+          </div>
+          <div className="space-y-2">
+            {disclosureChecks.map((check) => (
+              <div key={`${scenario.id}-${check.section}`} className="text-xs">
+                <div className="font-medium text-slate-900 dark:text-slate-100">
+                  {check.section}
+                </div>
+                <div className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {check.focus}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <CircleHelp className="w-4 h-4" />
+            {t("riskMissingData")}
+          </div>
+          {scenario.missing_data.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {scenario.missing_data.slice(0, 4).map((item) => (
+                <span
+                  key={`${scenario.id}-${item}`}
+                  className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-300"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t("riskNoMissingData")}
+            </p>
+          )}
+        </div>
+      </div>
+    </motion.article>
   );
 }
 

@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -17,6 +17,10 @@ import {
   Shield,
   DollarSign,
   Target,
+  ArrowLeft,
+  GitCompare,
+  Workflow,
+  BarChart3,
 } from "lucide-react";
 import { apiClient, type CompanySnapshot, type CompareResponse } from "@/lib/api";
 import { useT } from "@/lib/AppContext";
@@ -154,6 +158,16 @@ export function CompareView({ onClose }: Props) {
   const [data, setData] = useState<CompareResponse | null>(storedState?.data ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [compactControls, setCompactControls] = useState(false);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const workspaceActive =
+    inputFocused ||
+    Boolean(tickerInput.trim()) ||
+    tickers.length > 0 ||
+    loading ||
+    Boolean(error) ||
+    Boolean(data);
 
   useEffect(() => {
     try {
@@ -202,23 +216,80 @@ export function CompareView({ onClose }: Props) {
     }
   };
 
+  useEffect(() => {
+    const onScroll = () => setCompactControls(workspaceActive && window.scrollY > 160);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [workspaceActive]);
+
+  const backToIntro = () => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+    setTickerInput("");
+    setTickers([]);
+    setInputFocused(false);
+  };
+
+  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
+    if (workspaceActive) {
+      backToIntro();
+    }
+  };
+
   // PDF 导出由 ExportPDFButton 组件处理（targetId="compare-content"）
 
   const numCols = data?.companies.length || 0;
 
   return (
-    <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <section className="relative" onMouseDownCapture={handleBlankMouseDown}>
+      <motion.div
+        animate={{
+          opacity: workspaceActive ? 0.2 : 1,
+          filter: workspaceActive ? "blur(8px)" : "blur(0px)",
+        }}
+        transition={{ duration: 0.35 }}
+        className={workspaceActive ? "h-[320px] overflow-hidden" : ""}
+      >
+        <CompareIntro />
+      </motion.div>
+
+      <motion.div
+        layout
+        className={
+          workspaceActive
+            ? "sticky top-20 z-30 mx-auto -mt-72 max-w-5xl"
+            : "relative z-20 mx-auto -mt-40 max-w-4xl"
+        }
+      >
+    <div
+      ref={controlsRef}
+      onClick={(e) => e.stopPropagation()}
+      className={`rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-xl shadow-slate-200/50 dark:shadow-black/30 backdrop-blur-2xl transition-colors ${
+        compactControls ? "bg-white/45 dark:bg-slate-950/45" : "bg-white/85 dark:bg-slate-950/85"
+      }`}
+    >
       {/* 顶部输入区 */}
-      <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+      <div>
+        {!compactControls && (
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              📊 {t("compareTitle")}
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          {workspaceActive ? (
+            <button
+              type="button"
+              onClick={backToIntro}
+              className="inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-white transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t("analysisBackToIntro")}
+            </button>
+          ) : (
+            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               {t("compareHeaderSubtitle")}
-            </p>
-          </div>
+            </div>
+          )}
           {onClose && (
             <button
               onClick={onClose}
@@ -228,7 +299,9 @@ export function CompareView({ onClose }: Props) {
             </button>
           )}
         </div>
+        )}
 
+        {!compactControls && (
         <div className="flex gap-2 flex-wrap mb-3">
           {tickers.map((tk, i) => (
             <motion.div
@@ -247,41 +320,47 @@ export function CompareView({ onClose }: Props) {
             </motion.div>
           ))}
         </div>
+        )}
 
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               value={tickerInput}
+              onFocus={() => setInputFocused(true)}
               onChange={(e) => setTickerInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTicker()}
               placeholder={t("compareTickerPlaceholder")}
               disabled={tickers.length >= MAX_COMPANIES}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none"
+              className={`w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none ${
+                compactControls ? "bg-white/60 dark:bg-slate-950/55" : "bg-white dark:bg-slate-800"
+              }`}
             />
           </div>
-          <button
+          {!compactControls && <button
             onClick={addTicker}
             disabled={!tickerInput.trim() || tickers.length >= MAX_COMPANIES}
             className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 rounded-xl text-sm font-medium flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
             {t("compareAdd")}
-          </button>
-          <button
+          </button>}
+          {!compactControls && <button
             onClick={runCompare}
             disabled={tickers.length < 2 || loading}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl text-sm font-semibold disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {t("compareRun")}
-          </button>
+          </button>}
         </div>
 
-        {error && (
+        {!compactControls && error && (
           <p className="text-sm text-rose-600 dark:text-rose-400 mt-2">{error}</p>
         )}
       </div>
+    </div>
+      </motion.div>
 
       {/* 对比结果区 */}
       <AnimatePresence>
@@ -290,7 +369,7 @@ export function CompareView({ onClose }: Props) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             id="compare-content"
-            className="p-6 space-y-8"
+            className="mt-10 space-y-8"
           >
             {/* 顶部：公司名 + 风险评分 */}
             <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -451,7 +530,11 @@ export function CompareView({ onClose }: Props) {
                             }`}
                           >
                             {formatNumber(v)}
-                            {i === bestIdx && <span className="ml-1">★</span>}
+                            {i === bestIdx && (
+                              <span className="ml-1 text-[10px] uppercase tracking-wide">
+                                {t("compareBestValue")}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -462,11 +545,88 @@ export function CompareView({ onClose }: Props) {
             ))}
 
             <p className="text-xs text-slate-400 dark:text-slate-500 text-center pt-4 border-t border-slate-100 dark:border-slate-800">
-              ★ = {t("compareBestValue")} · {t("comparePeriod")}: FY {data.period}
+              {t("compareBestValue")} · {t("comparePeriod")}: FY {data.period}
             </p>
           </motion.div>
         )}
       </AnimatePresence>
+    </section>
+  );
+}
+
+function CompareIntro() {
+  const t = useT();
+  const items = [
+    { icon: GitCompare, title: t("compareIntroPeerTitle"), body: t("compareIntroPeerBody") },
+    { icon: BarChart3, title: t("compareIntroMetricTitle"), body: t("compareIntroMetricBody") },
+    { icon: Workflow, title: t("compareIntroOutputTitle"), body: t("compareIntroOutputBody") },
+  ];
+
+  return (
+    <div className="min-h-[calc(100vh-4rem)] pb-56">
+      <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 dark:border-blue-900 bg-blue-50/80 dark:bg-blue-950/30 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+        <GitCompare className="h-4 w-4" />
+        {t("compareIntroEyebrow")}
+      </div>
+      <div className="mt-10 grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+        <div>
+          <h1 className="max-w-4xl text-4xl md:text-6xl font-bold tracking-tight text-slate-950 dark:text-white">
+            {t("compareIntroTitle")}
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+            {t("compareIntroBody")}
+          </p>
+        </div>
+        <div className="grid gap-3">
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 p-5">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {t("compareIntroExampleLabel")}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+              {[t("compareIntroExampleA"), t("compareIntroExampleB"), t("compareIntroExampleC")].map((name, index) => (
+                <div key={name} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">{name}</div>
+                  <div className="mt-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-blue-500"
+                      style={{ width: `${[82, 56, 71][index]}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-slate-500 dark:text-slate-400">
+                    {[82, 56, 71][index]}/100
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+              <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span>{t("compareIntroExampleMetric1")}</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{t("compareBestValue")}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span>{t("compareIntroExampleMetric2")}</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{t("compareBestValue")}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>{t("compareIntroExampleMetric3")}</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{t("compareBestValue")}</span>
+              </div>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              {t("compareIntroExampleBody")}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-16 grid gap-4 md:grid-cols-3">
+        {items.map(({ icon: Icon, title, body }) => (
+          <div key={title} className="border-t border-slate-200 dark:border-slate-800 pt-5">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">{title}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">{body}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
