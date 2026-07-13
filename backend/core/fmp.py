@@ -3,6 +3,7 @@ core/fmp.py — Financial Modeling Prep fallback client
 """
 
 import os
+import re
 from urllib.parse import urlencode
 
 import requests
@@ -94,6 +95,7 @@ def financial_data(symbol: str, period: str, market: str, ticker: str) -> dict |
             "market": market,
             "ticker": ticker,
             "period": period,
+            "requested_period": str(period),
             "data_source": "fmp",
         }
 
@@ -112,8 +114,10 @@ def financial_data(symbol: str, period: str, market: str, ticker: str) -> dict |
         inc = _pick_period(income, period)
         bal = _pick_period(balance, period)
         cf = _pick_period(cashflow, period)
+        statement_periods = {}
 
         if inc:
+            statement_periods["income"] = _row_year(inc)
             revenue = inc.get("revenue")
             gross_profit = inc.get("grossProfit")
             net_income = inc.get("netIncome")
@@ -129,6 +133,7 @@ def financial_data(symbol: str, period: str, market: str, ticker: str) -> dict |
                 result["income"]["Net Margin (%)"] = safe_round(net_income / revenue * 100, 2) if net_income else None
 
         if bal:
+            statement_periods["balance"] = _row_year(bal)
             total_assets = bal.get("totalAssets")
             total_liabilities = bal.get("totalLiabilities")
             result["balance"] = {
@@ -142,11 +147,24 @@ def financial_data(symbol: str, period: str, market: str, ticker: str) -> dict |
                 result["balance"]["Debt-to-Asset Ratio (%)"] = safe_round(total_liabilities / total_assets * 100, 2)
 
         if cf:
+            statement_periods["cashflow"] = _row_year(cf)
             result["cashflow"] = {
                 "Operating Cash Flow (B)": to_billion(cf.get("netCashProvidedByOperatingActivities")),
                 "Capital Expenditure (B)": to_billion(cf.get("capitalExpenditure")),
                 "Free Cash Flow (B)": to_billion(cf.get("freeCashFlow")),
             }
+
+        if statement_periods:
+            actual = _resolve_actual_period(statement_periods)
+            result["statement_periods"] = statement_periods
+            result["actual_period_used"] = actual
+            result["resolved_period"] = actual or str(period)
+            result["period_matched"] = bool(actual and str(actual) == str(period))
+        else:
+            result["actual_period_used"] = None
+            result["resolved_period"] = str(period)
+            result["period_matched"] = False
+        result["is_stale"] = bool(result.get("_stale"))
 
         return result if any(k in result for k in ("valuation", "income", "balance", "cashflow")) else None
 
@@ -171,3 +189,19 @@ def _pick_period(rows: list[dict], period: str) -> dict | None:
         if str(period) in date:
             return row
     return rows[0]
+
+
+def _row_year(row: dict) -> str | None:
+    date = str(row.get("date") or row.get("calendarYear") or row.get("fiscalYear") or "")
+    match = re.search(r"\b(20\d{2}|19\d{2})\b", date)
+    return match.group(1) if match else None
+
+
+def _resolve_actual_period(section_periods: dict) -> str | None:
+    counts: dict[str, int] = {}
+    for year in section_periods.values():
+        if year:
+            counts[str(year)] = counts.get(str(year), 0) + 1
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)[0][0]

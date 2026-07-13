@@ -8,6 +8,48 @@ core/agent.py — LLM Agent 模块
 import json
 import re
 
+from .utils import detect_market
+
+
+KNOWN_COMPANY_ALIASES = {
+    "apple": ("Apple", "AAPL", "us"),
+    "苹果": ("Apple", "AAPL", "us"),
+    "aapl": ("Apple", "AAPL", "us"),
+    "tesla": ("Tesla", "TSLA", "us"),
+    "特斯拉": ("Tesla", "TSLA", "us"),
+    "tsla": ("Tesla", "TSLA", "us"),
+    "nvidia": ("NVIDIA", "NVDA", "us"),
+    "英伟达": ("NVIDIA", "NVDA", "us"),
+    "nvda": ("NVIDIA", "NVDA", "us"),
+    "microsoft": ("Microsoft", "MSFT", "us"),
+    "微软": ("Microsoft", "MSFT", "us"),
+    "msft": ("Microsoft", "MSFT", "us"),
+    "amazon": ("Amazon", "AMZN", "us"),
+    "亚马逊": ("Amazon", "AMZN", "us"),
+    "amzn": ("Amazon", "AMZN", "us"),
+    "google": ("Alphabet", "GOOGL", "us"),
+    "alphabet": ("Alphabet", "GOOGL", "us"),
+    "googl": ("Alphabet", "GOOGL", "us"),
+    "meta": ("Meta Platforms", "META", "us"),
+    "facebook": ("Meta Platforms", "META", "us"),
+    "netflix": ("Netflix", "NFLX", "us"),
+    "nflx": ("Netflix", "NFLX", "us"),
+    "berkshire": ("Berkshire Hathaway", "BRK-B", "us"),
+    "brk.b": ("Berkshire Hathaway", "BRK-B", "us"),
+    "brk-b": ("Berkshire Hathaway", "BRK-B", "us"),
+    "贵州茅台": ("贵州茅台", "600519", "cn"),
+    "茅台": ("贵州茅台", "600519", "cn"),
+    "宁德时代": ("宁德时代", "300750", "cn"),
+    "比亚迪": ("比亚迪", "002594", "cn"),
+    "腾讯": ("腾讯控股", "00700", "hk"),
+    "腾讯控股": ("腾讯控股", "00700", "hk"),
+    "tencent": ("Tencent Holdings", "00700", "hk"),
+    "阿里巴巴": ("Alibaba", "09988", "hk"),
+    "小米": ("Xiaomi", "01810", "hk"),
+    "汇丰": ("HSBC Holdings", "00005", "hk"),
+    "汇丰控股": ("HSBC Holdings", "00005", "hk"),
+}
+
 
 # ─────────────────────────────────────────
 # LLM 统一调用层
@@ -84,6 +126,10 @@ def extract_company_and_intent(
     """
     抽取：公司名、ticker、市场、分析类型、时间
     """
+    fallback = _extract_intent_locally(user_input)
+    if fallback.get("ticker"):
+        return fallback
+
     system = """You are an expert assistant that extracts stock analysis intents from user queries.
 Handle US stocks, China A-shares, and Hong Kong stocks.
 
@@ -128,13 +174,59 @@ Rules:
         result.setdefault("period", "2024")
         return result
     except Exception:
+        return fallback
+
+
+def _extract_intent_locally(user_input: str) -> dict:
+    text = user_input or ""
+    lower = text.lower()
+    period_match = re.search(r"\b(20\d{2}|19\d{2})\b", text)
+    period = period_match.group(1) if period_match else "2024"
+    analysis_types = _infer_analysis_types(text)
+
+    for alias, (company_name, ticker, market) in KNOWN_COMPANY_ALIASES.items():
+        if alias in lower or alias in text:
+            return {
+                "company_name": company_name,
+                "ticker": ticker,
+                "market": market,
+                "analysis_types": analysis_types,
+                "period": period,
+            }
+
+    # Direct ticker input, e.g. AAPL, 600519, 00700, BRK-B.
+    ticker_match = re.search(r"\b([A-Z]{1,5}(?:[.-][A-Z])?|\d{4,6})\b", text)
+    if ticker_match:
+        raw = ticker_match.group(1).upper()
+        normalized = raw.replace(".", "-") if raw in {"BRK.B", "BRK-B"} else raw
+        market = detect_market(normalized)
         return {
             "company_name": None,
-            "ticker": None,
-            "market": None,
-            "analysis_types": ["financial", "valuation", "risk"],
-            "period": "2024",
+            "ticker": normalized,
+            "market": market,
+            "analysis_types": analysis_types,
+            "period": period,
         }
+
+    return {
+        "company_name": None,
+        "ticker": None,
+        "market": None,
+        "analysis_types": analysis_types,
+        "period": period,
+    }
+
+
+def _infer_analysis_types(text: str) -> list:
+    lower = (text or "").lower()
+    types = []
+    if any(k in lower for k in ["financial", "财务", "cash flow", "现金流", "income", "利润"]):
+        types.append("financial")
+    if any(k in lower for k in ["valuation", "value", "overvalued", "估值", "贵", "便宜"]):
+        types.append("valuation")
+    if any(k in lower for k in ["risk", "risks", "风险", "预警"]):
+        types.append("risk")
+    return types or ["financial", "valuation", "risk"]
 
 
 # ─────────────────────────────────────────
@@ -324,6 +416,18 @@ Generate a concise report using these exact Markdown headings:
 # ─────────────────────────────────────────
 def _format_financial_data(data: dict) -> str:
     lines = []
+    metadata = [
+        ("Requested period", data.get("requested_period")),
+        ("Actual fiscal year used", data.get("actual_period_used") or data.get("resolved_period")),
+        ("Period matched", data.get("period_matched")),
+        ("Data source", data.get("data_source")),
+        ("Stale cache", data.get("is_stale") or data.get("_stale")),
+    ]
+    metadata_lines = [f"  - {label}: {value}" for label, value in metadata if value is not None]
+    if metadata_lines:
+        lines.append("\n🧾 Data Freshness / 数据时效:")
+        lines.extend(metadata_lines)
+
     section_map = {
         "valuation": "📈 Valuation / 估值",
         "income": "💰 Income Statement / 利润表",

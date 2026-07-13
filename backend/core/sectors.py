@@ -17,6 +17,76 @@ QUOTE_TTL = 30 * 60
 STALE_TTL = 30 * 24 * 60 * 60
 
 
+def _first_existing(row, columns: list[str]):
+    for col in columns:
+        if col in row and row.get(col) is not None:
+            return row.get(col)
+    return None
+
+
+def _num(value):
+    try:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.replace(",", "").replace("%", "").strip()
+            if value in {"", "-", "--", "nan", "None"}:
+                return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _fetch_cn_industry_frame():
+    return cached_fetch(
+        "ak.cn.industry_name",
+        lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
+        ttl=QUOTE_TTL,
+    )
+
+
+def _fetch_cn_industry_flow_frame():
+    return cached_fetch(
+        "ak.cn.industry_fund_flow",
+        lambda: retry(
+            lambda: ak.stock_sector_fund_flow_rank(
+                indicator="今日", sector_type="行业资金流"
+            ),
+            retries=1,
+        ),
+        ttl=QUOTE_TTL,
+    )
+
+
+def _normalize_cn_sector_row(row, flow_df=None) -> dict | None:
+    name = _first_existing(row, ["板块名称", "名称", "行业名称"])
+    if not name:
+        return None
+
+    change = _num(_first_existing(row, ["涨跌幅", "今日涨跌幅", "涨跌幅(%)", "涨幅"]))
+    price = _num(_first_existing(row, ["最新价", "最新", "收盘", "收盘价"]))
+    code = _first_existing(row, ["板块代码", "代码", "行业代码"])
+    main_inflow = _num(_first_existing(row, ["今日主力净流入-净额", "主力净流入-净额", "净流入"]))
+
+    if main_inflow is None and flow_df is not None and not flow_df.empty:
+        try:
+            matched = flow_df[flow_df["名称"] == name] if "名称" in flow_df.columns else None
+            if matched is not None and not matched.empty:
+                flow_row = matched.iloc[0]
+                main_inflow = _num(_first_existing(flow_row, ["今日主力净流入-净额", "主力净流入-净额", "净流入"]))
+        except Exception:
+            pass
+
+    return {
+        "label": name,
+        "code": code,
+        "price": safe_round(price),
+        "change_pct": safe_round(change, 2),
+        "main_inflow_yi": safe_round(main_inflow / 1e8, 2) if main_inflow is not None else None,
+        "source": "akshare",
+    }
+
+
 # ─────────────────────────────────────────
 # 美股 11 个 GICS 行业板块（用 SPDR ETF 代理）
 # ─────────────────────────────────────────
@@ -96,50 +166,21 @@ def get_cn_industry_sectors(top_n: int = 15) -> list:
         results = []
 
         try:
-            df = cached_fetch(
-                "ak.cn.industry_name",
-                lambda: retry(lambda: ak.stock_board_industry_name_em(), retries=1),
-                ttl=QUOTE_TTL,
-            )
-            if df is None or df.empty:
+            df = _fetch_cn_industry_frame()
+            flow_df = _fetch_cn_industry_flow_frame()
+            source_df = df if df is not None and not df.empty else flow_df
+            if source_df is None or source_df.empty:
                 return None
 
-            df = df.sort_values("涨跌幅", ascending=False).head(top_n)
+            sort_col = next((c for c in ["涨跌幅", "今日涨跌幅", "涨跌幅(%)", "涨幅"] if c in source_df.columns), None)
+            if sort_col:
+                source_df = source_df.assign(_sort_change=source_df[sort_col].map(_num))
+                source_df = source_df.sort_values("_sort_change", ascending=False)
 
-            flow_df = cached_fetch(
-                "ak.cn.industry_fund_flow",
-                lambda: retry(
-                    lambda: ak.stock_sector_fund_flow_rank(
-                        indicator="今日", sector_type="行业资金流"
-                    ),
-                    retries=1,
-                ),
-                ttl=QUOTE_TTL,
-            )
-
-            for _, row in df.iterrows():
-                name = row.get("板块名称")
-                item = {
-                    "label": name,
-                    "code": row.get("板块代码"),
-                    "price": safe_round(row.get("最新价")),
-                    "change_pct": safe_round(row.get("涨跌幅"), 2),
-                    "main_inflow_yi": None,
-                    "source": "akshare",
-                }
-                if flow_df is not None and not flow_df.empty:
-                    try:
-                        matched = flow_df[flow_df["名称"] == name]
-                        if not matched.empty:
-                            for col in ["今日主力净流入-净额", "主力净流入-净额"]:
-                                if col in matched.columns:
-                                    val = matched.iloc[0][col]
-                                    if val is not None:
-                                        item["main_inflow_yi"] = safe_round(float(val) / 1e8, 2)
-                                    break
-                    except Exception:
-                        pass
-                results.append(item)
+            for _, row in source_df.head(top_n).iterrows():
+                item = _normalize_cn_sector_row(row, flow_df=flow_df)
+                if item:
+                    results.append(item)
         except Exception:
             return None
 

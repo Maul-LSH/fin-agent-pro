@@ -51,6 +51,144 @@ def assess_company_risk(ticker: str, market: str = "us", period: str = "2024") -
 # ─────────────────────────────────────────
 # 美股风险评估（yfinance）
 # ─────────────────────────────────────────
+US_INDUSTRY_OVERRIDES = {
+    "JPM": "bank_or_financial",
+    "BAC": "bank_or_financial",
+    "WFC": "bank_or_financial",
+    "C": "bank_or_financial",
+    "GS": "bank_or_financial",
+    "MS": "bank_or_financial",
+    "BRK-B": "insurance",
+    "BRK.B": "insurance",
+    "AIG": "insurance",
+    "MET": "insurance",
+    "PRU": "insurance",
+    "O": "reit",
+    "PLD": "reit",
+    "AMT": "reit",
+    "SPG": "reit",
+    "WMT": "retail",
+    "COST": "retail",
+    "TGT": "retail",
+    "HD": "retail",
+    "LOW": "retail",
+    "XOM": "energy_or_capital_intensive",
+    "CVX": "energy_or_capital_intensive",
+    "COP": "energy_or_capital_intensive",
+}
+
+
+def _classify_us_industry_profile(ticker: str, info: dict, facts: dict) -> dict:
+    ticker_key = (ticker or "").upper().replace("-", ".")
+    sector = str(info.get("sector") or "")
+    industry = str(info.get("industry") or "")
+    quote_type = str(info.get("quoteType") or "")
+    text = f"{sector} {industry} {quote_type}".lower()
+    signals = []
+    confidence = 0.35
+
+    if sector:
+        signals.append(f"sector={sector}")
+        confidence += 0.15
+    if industry:
+        signals.append(f"industry={industry}")
+        confidence += 0.15
+
+    override = US_INDUSTRY_OVERRIDES.get(ticker_key) or US_INDUSTRY_OVERRIDES.get((ticker or "").upper())
+    profile_type = override
+    if override:
+        signals.append(f"ticker override={override}")
+        confidence = max(confidence, 0.85)
+
+    if profile_type is None:
+        if any(k in text for k in ["bank", "capital markets", "credit services", "asset management", "mortgage finance", "financial services"]):
+            profile_type = "bank_or_financial"
+        elif any(k in text for k in ["insurance", "reinsurance"]):
+            profile_type = "insurance"
+        elif "reit" in text or ("real estate" in text and "investment trust" in text):
+            profile_type = "reit"
+        elif any(k in text for k in ["software", "internet", "semiconductor", "technology", "communication services", "interactive media"]):
+            profile_type = "tech_light_asset"
+        elif any(k in text for k in ["retail", "discount stores", "grocery", "department stores", "home improvement"]):
+            profile_type = "retail"
+        elif any(k in text for k in ["energy", "oil", "gas", "utilities", "telecom", "metals", "mining"]):
+            profile_type = "energy_or_capital_intensive"
+        elif any(k in text for k in ["industrial", "machinery", "auto", "aerospace", "manufacturing", "chemicals", "building products"]):
+            profile_type = "manufacturing"
+        else:
+            profile_type = "generic_non_manufacturing"
+
+    total_assets = facts.get("total_assets") or 0
+    revenue = facts.get("revenue") or 0
+    gross_profit = facts.get("gross_profit")
+    ppe = facts.get("ppe")
+    inventory = facts.get("inventory")
+    total_debt = facts.get("total_debt")
+    cash = facts.get("cash")
+
+    if total_assets > 0:
+        asset_turnover = revenue / total_assets if revenue else None
+        ppe_assets = ppe / total_assets if ppe is not None else None
+        inventory_assets = inventory / total_assets if inventory is not None else None
+        if asset_turnover is not None:
+            signals.append(f"asset_turnover={safe_round(asset_turnover, 2)}")
+        if ppe_assets is not None:
+            signals.append(f"ppe/assets={safe_round(ppe_assets, 2)}")
+        if inventory_assets is not None:
+            signals.append(f"inventory/assets={safe_round(inventory_assets, 2)}")
+
+        if ppe_assets is not None and ppe_assets > 0.35 and profile_type in {"generic_non_manufacturing", "energy_or_capital_intensive"}:
+            profile_type = "energy_or_capital_intensive"
+            confidence += 0.10
+        if inventory_assets is not None and inventory_assets > 0.12 and profile_type == "generic_non_manufacturing":
+            profile_type = "retail"
+            confidence += 0.08
+
+    if revenue and gross_profit is not None:
+        gross_margin = gross_profit / revenue
+        signals.append(f"gross_margin={safe_round(gross_margin * 100, 1)}%")
+        if gross_margin > 0.45 and profile_type == "generic_non_manufacturing":
+            profile_type = "tech_light_asset"
+            confidence += 0.08
+
+    if total_debt is not None and cash is not None and total_debt > 0:
+        signals.append(f"cash/debt={safe_round(cash / total_debt, 2)}")
+
+    model_by_type = {
+        "bank_or_financial": ("financial_institution_framework", False, None),
+        "insurance": ("insurance_framework", False, None),
+        "reit": ("reit_framework", False, None),
+        "manufacturing": ("altman_original_plus_quality_checks", True, "original"),
+        "tech_light_asset": ("z_double_prime_plus_cash_quality", True, "z_double_prime"),
+        "retail": ("z_double_prime_plus_inventory_cash_conversion", True, "z_double_prime"),
+        "energy_or_capital_intensive": ("z_double_prime_plus_debt_capex_coverage", True, "z_double_prime"),
+        "generic_non_manufacturing": ("z_double_prime_plus_quality_checks", True, "z_double_prime"),
+    }
+    recommended_model, altman_applicable, altman_variant = model_by_type.get(
+        profile_type,
+        ("z_double_prime_plus_quality_checks", True, "z_double_prime"),
+    )
+
+    if not altman_applicable:
+        note = "Altman Z-Score is not suitable for this business model; use sector-specific capital, liquidity, and asset-quality checks."
+    elif altman_variant == "original":
+        note = "Original Altman Z-Score is used because this profile is closer to manufacturing / asset-turnover businesses."
+    else:
+        note = "Altman Z'' is used because it removes Sales / Total Assets, reducing asset-turnover bias for non-manufacturing companies."
+
+    return {
+        "type": profile_type,
+        "confidence": safe_round(min(confidence, 0.95), 2),
+        "sector": sector or None,
+        "industry": industry or None,
+        "signals": signals[:8],
+        "recommended_model": recommended_model,
+        "altman_applicable": altman_applicable,
+        "altman_variant": altman_variant,
+        "note": note,
+    }
+
+
 def _assess_us_risk(ticker: str, period: str) -> dict:
     result = {
         "ticker": ticker,
@@ -63,10 +201,15 @@ def _assess_us_risk(ticker: str, period: str) -> dict:
         "beneish_m": None,
         "cash_quality": None,
         "receivables": None,
+        "industry_profile": None,
         "dimension_scores": {},
         "red_flags": [],
         "risk_scenarios": [],
         "disclosure_checks": [],
+        "model_confidence": None,
+        "risk_drivers": [],
+        "mitigating_factors": [],
+        "stress_tests": [],
     }
 
     try:
@@ -172,11 +315,37 @@ def _assess_us_risk(ticker: str, period: str) -> dict:
         # 市值
         market_cap = info.get("marketCap")
 
-        # ── 1. Altman Z-Score ──
-        result["altman_z"] = _calc_altman_z(
-            current_assets, current_liab, total_assets, retained_earnings,
-            operating_income, market_cap, total_liab, revenue,
+        industry_profile = _classify_us_industry_profile(
+            ticker=ticker,
+            info=info,
+            facts={
+                "revenue": revenue,
+                "gross_profit": gross_profit,
+                "total_assets": total_assets,
+                "ppe": ppe,
+                "inventory": inventory,
+                "cash": cash,
+                "total_debt": total_debt,
+                "total_liab": total_liab,
+                "equity": equity,
+                "capex": capex,
+            },
         )
+        result["industry_profile"] = industry_profile
+
+        # ── 1. Altman family model, routed by industry applicability ──
+        if industry_profile.get("altman_applicable") is False:
+            result["altman_z"] = None
+        elif industry_profile.get("altman_variant") == "original":
+            result["altman_z"] = _calc_altman_z(
+                current_assets, current_liab, total_assets, retained_earnings,
+                operating_income, market_cap, total_liab, revenue,
+            )
+        else:
+            result["altman_z"] = _calc_altman_z_double_prime(
+                current_assets, current_liab, total_assets, retained_earnings,
+                operating_income, total_liab, equity,
+            )
 
         # ── 2. 现金流匹配度（最强的造假信号）──
         result["cash_quality"] = _calc_cash_quality(net_income, operating_cf)
@@ -268,6 +437,10 @@ def _assess_us_risk(ticker: str, period: str) -> dict:
         # ── 7. 综合评分 ──
         result["overall_score"] = _calc_overall_score(result)
         result["risk_level"] = _score_to_level(result["overall_score"])
+        result["model_confidence"] = _calc_model_confidence(result)
+        result["risk_drivers"] = _extract_risk_drivers(result)
+        result["mitigating_factors"] = _extract_mitigating_factors(result)
+        result["stress_tests"] = _build_generic_stress_tests(result["overall_score"], facts)
         result["summary"] = _generate_summary(result)
 
     except Exception as e:
@@ -302,6 +475,10 @@ def _assess_cn_risk(ticker: str, period: str) -> dict:
         "red_flags": [],
         "risk_scenarios": [],
         "disclosure_checks": [],
+        "model_confidence": None,
+        "risk_drivers": [],
+        "mitigating_factors": [],
+        "stress_tests": [],
     }
 
     try:
@@ -393,6 +570,10 @@ def _assess_cn_risk(ticker: str, period: str) -> dict:
         # 综合
         result["overall_score"] = _calc_overall_score(result)
         result["risk_level"] = _score_to_level(result["overall_score"])
+        result["model_confidence"] = _calc_model_confidence(result)
+        result["risk_drivers"] = _extract_risk_drivers(result)
+        result["mitigating_factors"] = _extract_mitigating_factors(result)
+        result["stress_tests"] = _build_generic_stress_tests(result["overall_score"], facts)
         result["summary"] = _generate_summary(result)
 
     except Exception as e:
@@ -449,12 +630,79 @@ def _calc_altman_z(
 
         return {
             "score": safe_round(z, 2),
+            "model": "original",
+            "model_name": "Altman Z-Score",
+            "applicability": "manufacturing",
+            "distress_threshold": 1.81,
+            "safe_threshold": 2.99,
             "components": {
                 "working_capital_to_assets": safe_round(a, 3),
                 "retained_earnings_to_assets": safe_round(b, 3),
                 "ebit_to_assets": safe_round(c, 3),
                 "market_cap_to_debt": safe_round(d, 3),
                 "asset_turnover": safe_round(e, 3),
+            },
+            "risk_level": risk_level,
+            "interpretation": interpretation,
+        }
+    except Exception:
+        return None
+
+
+def _calc_altman_z_double_prime(
+    current_assets,
+    current_liab,
+    total_assets,
+    retained_earnings,
+    ebit,
+    total_liab,
+    book_equity,
+) -> Optional[dict]:
+    """
+    Altman Z''-Score for non-manufacturing / emerging-market contexts.
+    It removes Sales / Total Assets, avoiding systematic bias from asset turnover.
+
+    Common cutoffs:
+    Z'' > 2.60: safer zone
+    1.10 < Z'' < 2.60: gray zone
+    Z'' < 1.10: distress zone
+    """
+    try:
+        if not all(x is not None for x in [total_assets, total_liab, ebit]):
+            return None
+        if total_assets <= 0 or total_liab <= 0:
+            return None
+
+        wc = (current_assets or 0) - (current_liab or 0)
+        a = wc / total_assets
+        b = (retained_earnings or 0) / total_assets
+        c = ebit / total_assets
+        d = (book_equity or 0) / total_liab
+
+        z = 6.56 * a + 3.26 * b + 6.72 * c + 1.05 * d
+
+        if z > 2.60:
+            risk_level = "low"
+            interpretation = "Z'' 非制造业模型显示破产风险较低"
+        elif z > 1.10:
+            risk_level = "medium"
+            interpretation = "Z'' 非制造业模型处于灰色区，需要结合现金流和负债覆盖继续判断"
+        else:
+            risk_level = "high"
+            interpretation = "Z'' 非制造业模型处于危险区，偿债安全边际偏弱"
+
+        return {
+            "score": safe_round(z, 2),
+            "model": "z_double_prime",
+            "model_name": "Altman Z''-Score",
+            "applicability": "non_manufacturing",
+            "distress_threshold": 1.10,
+            "safe_threshold": 2.60,
+            "components": {
+                "working_capital_to_assets": safe_round(a, 3),
+                "retained_earnings_to_assets": safe_round(b, 3),
+                "ebit_to_assets": safe_round(c, 3),
+                "book_equity_to_liabilities": safe_round(d, 3),
             },
             "risk_level": risk_level,
             "interpretation": interpretation,
@@ -1058,7 +1306,7 @@ def _scenario_short_term_liquidity(f: dict) -> dict:
 
 def _scenario(id_: str, title: str, evidence: list, disclosure_checks: list[tuple[str, str]], missing_data: list[str]) -> dict:
     score = _scenario_score(evidence, missing_data)
-    level = _score_to_level(score)
+    level = _score_to_scenario_level(score)
     high_count = sum(1 for item in evidence if item.get("severity") == "high")
     medium_count = sum(1 for item in evidence if item.get("severity") == "medium")
     if high_count:
@@ -1104,6 +1352,14 @@ def _scenario_score(evidence: list, missing_data: list[str]) -> int:
             score += 2
     score += min(len(missing_data), 3) * 3
     return max(0, min(100, score))
+
+
+def _score_to_scenario_level(score: int) -> str:
+    if score >= 70:
+        return "high"
+    if score >= 40:
+        return "medium"
+    return "low"
 
 
 def _evidence(label: str, value, interpretation: str, severity: str) -> dict:
@@ -1325,12 +1581,15 @@ def _collect_red_flags(result: dict, raw: dict) -> list:
 
     # Altman Z 警告
     if result.get("altman_z") and result["altman_z"].get("risk_level") == "high":
+        altman = result["altman_z"]
+        model_name = altman.get("model_name", "Altman Z-Score")
+        distress_threshold = altman.get("distress_threshold", 1.81)
         flags.append({
             "category": "破产风险",
             "severity": "high",
-            "title": "Altman Z-Score 处于危险区",
-            "description": f"Z 分 {result['altman_z']['score']} < 1.81，历史上落入此区间的公司，2 年内破产概率较高。",
-            "metric": result['altman_z']['score'],
+            "title": f"{model_name} 处于危险区",
+            "description": f"{model_name} 分数 {altman['score']} < {distress_threshold}，落入该模型的危险区，需要结合现金流、负债覆盖和披露附注复核。",
+            "metric": altman['score'],
         })
 
     # 现金流匹配 - 最关键
@@ -1452,11 +1711,226 @@ def _calc_overall_score(result: dict) -> int:
 
 
 def _score_to_level(score: int) -> str:
-    if score >= 70:
+    if score >= 81:
         return "high"
-    if score >= 40:
+    if score >= 61:
+        return "medium_high"
+    if score >= 41:
         return "medium"
+    if score >= 21:
+        return "medium_low"
     return "low"
+
+
+def _risk_level_label(level: str) -> str:
+    return {
+        "low": "低风险",
+        "medium_low": "中低风险",
+        "medium": "中等风险",
+        "medium_high": "中高风险",
+        "high": "高风险",
+    }.get(level, "中等风险")
+
+
+def _calc_model_confidence(result: dict) -> dict:
+    profile_confidence = result.get("industry_profile", {}).get("confidence")
+    score = 70
+    reasons = []
+
+    if profile_confidence is None:
+        score -= 10
+        reasons.append("行业分类信息不足，部分模型按通用框架估计。")
+    elif profile_confidence < 0.55:
+        score -= 20
+        reasons.append("行业分类置信度偏低，行业模型选择可能存在误差。")
+    elif profile_confidence < 0.75:
+        score -= 8
+        reasons.append("行业分类有一定依据，但仍需结合业务结构复核。")
+    else:
+        reasons.append("行业分类信号较充分，模型选择可信度较高。")
+
+    scenarios = result.get("risk_scenarios", []) or []
+    missing_items = []
+    for scenario in scenarios:
+        missing_items.extend(scenario.get("missing_data", []) or [])
+    if len(missing_items) >= 6:
+        score -= 25
+        reasons.append("多个关键场景缺少结构化字段，部分判断依赖间接估计。")
+    elif missing_items:
+        score -= min(15, len(missing_items) * 3)
+        reasons.append(f"存在 {len(missing_items)} 项缺失数据，部分风险场景无法完整自动判断。")
+    else:
+        score += 10
+        reasons.append("主要结构化三表字段覆盖较完整。")
+
+    if result.get("altman_z") is None:
+        score -= 6
+        reasons.append("Altman 类模型不可用或不适用，偿债风险更多依赖行业/场景规则。")
+    if result.get("cash_quality") is None:
+        score -= 8
+        reasons.append("现金流质量指标缺失，盈利质量判断置信度下降。")
+
+    score = max(0, min(100, score))
+    if score >= 75:
+        level = "high"
+    elif score >= 50:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "level": level,
+        "score": int(score),
+        "reasons": reasons[:4],
+    }
+
+
+def _extract_risk_drivers(result: dict) -> list[dict]:
+    drivers = []
+    for flag in result.get("red_flags", []) or []:
+        drivers.append({
+            "title": flag.get("title"),
+            "description": flag.get("description"),
+            "severity": flag.get("severity", "medium"),
+            "metric": flag.get("metric"),
+        })
+
+    for scenario in sorted(result.get("risk_scenarios", []) or [], key=lambda s: s.get("score", 0), reverse=True):
+        if scenario.get("score", 0) < 40:
+            continue
+        top_evidence = next(
+            (item for item in scenario.get("evidence", []) if item.get("severity") in {"high", "medium"}),
+            None,
+        )
+        drivers.append({
+            "title": scenario.get("title"),
+            "description": top_evidence.get("interpretation") if top_evidence else scenario.get("summary"),
+            "severity": scenario.get("risk_level", "medium"),
+            "metric": top_evidence.get("value") if top_evidence else f"{scenario.get('score')}/100",
+        })
+
+    deduped = []
+    seen = set()
+    for item in drivers:
+        key = (item.get("title"), item.get("description"))
+        if not item.get("title") or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped[:5]
+
+
+def _extract_mitigating_factors(result: dict) -> list[dict]:
+    factors = []
+    altman = result.get("altman_z")
+    if altman and altman.get("risk_level") == "low":
+        factors.append({
+            "title": altman.get("model_name", "Altman Z-Score"),
+            "description": altman.get("interpretation"),
+            "metric": altman.get("score"),
+        })
+
+    cash_quality = result.get("cash_quality")
+    if cash_quality and cash_quality.get("risk_level") == "low":
+        factors.append({
+            "title": "现金流质量较好",
+            "description": cash_quality.get("interpretation"),
+            "metric": f"{cash_quality.get('ratio')}x" if cash_quality.get("ratio") is not None else None,
+        })
+
+    receivables = result.get("receivables")
+    if receivables and receivables.get("risk_level") == "low":
+        factors.append({
+            "title": "应收账款未显示异常扩张",
+            "description": receivables.get("interpretation"),
+            "metric": f"{receivables.get('diff')}pp",
+        })
+
+    low_scenarios = [
+        s for s in result.get("risk_scenarios", []) or []
+        if s.get("risk_level") == "low" and s.get("evidence")
+    ]
+    for scenario in low_scenarios[:2]:
+        factors.append({
+            "title": scenario.get("title"),
+            "description": scenario.get("summary"),
+            "metric": f"{scenario.get('score')}/100",
+        })
+
+    return factors[:5]
+
+
+def _build_generic_stress_tests(base_score: int, facts: dict) -> list[dict]:
+    tests = []
+    revenue = facts.get("revenue")
+    gross_profit = facts.get("gross_profit")
+    inventory = facts.get("inventory")
+    total_debt = facts.get("total_debt")
+    operating_income = facts.get("operating_income")
+    interest_expense = facts.get("interest_expense")
+
+    if revenue:
+        tests.append(_stress_test(
+            "revenue_down_10",
+            "收入下降 10%",
+            base_score,
+            8 + (6 if _ratio(facts.get("operating_cf"), revenue) is not None and _ratio(facts.get("operating_cf"), revenue) < 0.1 else 0),
+            "模拟需求走弱或销量下滑对利润与现金流的压力。",
+        ))
+
+    if revenue and gross_profit is not None:
+        gross_margin = gross_profit / revenue
+        tests.append(_stress_test(
+            "gross_margin_down_5pp",
+            "毛利率下降 5 个百分点",
+            base_score,
+            10 + (5 if gross_margin < 0.25 else 0),
+            "模拟价格竞争、成本上升或促销压力导致的盈利压缩。",
+        ))
+
+    if total_debt:
+        coverage = _ratio(operating_income, abs(interest_expense or 0))
+        tests.append(_stress_test(
+            "interest_rate_up_200bp",
+            "融资成本上升 200bp",
+            base_score,
+            7 + (8 if coverage is not None and coverage < 3 else 0),
+            "模拟再融资或浮动利率债务在高利率环境下的偿债压力。",
+        ))
+
+    if inventory:
+        inv_assets = _ratio(inventory, facts.get("total_assets"))
+        tests.append(_stress_test(
+            "inventory_write_down_10",
+            "存货减值 10%",
+            base_score,
+            6 + (8 if inv_assets is not None and inv_assets > 0.15 else 0),
+            "模拟库存滞销或价格下跌导致的资产减值与毛利冲击。",
+        ))
+
+    if facts.get("receivables"):
+        tests.append(_stress_test(
+            "receivable_delay_30d",
+            "应收回款延长 30 天",
+            base_score,
+            6 + (8 if _ratio(facts.get("cash"), facts.get("current_liab")) is not None and _ratio(facts.get("cash"), facts.get("current_liab")) < 0.3 else 0),
+            "模拟客户付款变慢对短期流动性和现金转换周期的压力。",
+        ))
+
+    return tests[:5]
+
+
+def _stress_test(id_: str, title: str, base_score: int, delta: int, summary: str) -> dict:
+    stressed_score = max(0, min(100, int(base_score + delta)))
+    return {
+        "id": id_,
+        "title": title,
+        "base_score": int(base_score),
+        "stressed_score": stressed_score,
+        "risk_level": _score_to_level(stressed_score),
+        "delta": stressed_score - int(base_score),
+        "summary": summary,
+    }
 
 
 def _generate_summary(result: dict) -> str:
@@ -1465,15 +1939,21 @@ def _generate_summary(result: dict) -> str:
     n_flags = len(result.get("red_flags", []))
     dim = result.get("dimension_scores", {})
     weak_dims = [k for k, v in dim.items() if v is not None and v < 50]
+    level_label = _risk_level_label(level)
 
     if level == "high":
         if n_flags > 0:
-            return f"⚠️ 高风险（{score}/100）：发现 {n_flags} 项异常信号，建议深入审查后再决定。"
-        return f"⚠️ 高风险（{score}/100）：多项财务指标偏弱，整体健康度较差。"
+            return f"⚠️ {level_label}（{score}/100）：发现 {n_flags} 项异常信号，建议深入审查后再决定。"
+        return f"⚠️ {level_label}（{score}/100）：多项财务指标偏弱，整体健康度较差。"
+
+    if level == "medium_high":
+        if n_flags > 0:
+            return f"⚠️ {level_label}（{score}/100）：检测到 {n_flags} 项关注信号，风险压力已经较明显。"
+        return f"⚠️ {level_label}（{score}/100）：未触发极端警报，但多项指标显示压力。"
 
     if level == "medium":
         if n_flags > 0:
-            return f"⚡ 中等风险（{score}/100）：检测到 {n_flags} 项需要关注的指标。"
+            return f"⚡ {level_label}（{score}/100）：检测到 {n_flags} 项需要关注的指标。"
         if weak_dims:
             dim_names = {
                 "profitability": "盈利能力",
@@ -1483,9 +1963,14 @@ def _generate_summary(result: dict) -> str:
                 "valuation": "估值",
             }
             weak_labels = [dim_names.get(d, d) for d in weak_dims]
-            return f"⚡ 中等风险（{score}/100）：未触发严重警报，但 {'、'.join(weak_labels)} 表现偏弱。"
-        return f"⚡ 中等风险（{score}/100）：整体表现一般，无突出优势或缺陷。"
+            return f"⚡ {level_label}（{score}/100）：未触发严重警报，但 {'、'.join(weak_labels)} 表现偏弱。"
+        return f"⚡ {level_label}（{score}/100）：整体表现一般，无突出优势或缺陷。"
+
+    if level == "medium_low":
+        if n_flags > 0:
+            return f"✅ {level_label}（{score}/100）：整体较稳，但仍有 {n_flags} 项指标值得跟踪。"
+        return f"✅ {level_label}（{score}/100）：财务健康度较好，暂未显示明显压力。"
 
     if n_flags == 0 and not weak_dims:
-        return f"✅ 低风险（{score}/100）：所有维度表现良好，财务健康。"
-    return f"✅ 低风险（{score}/100）：财务指标整体健康。"
+        return f"✅ {level_label}（{score}/100）：所有维度表现良好，财务健康。"
+    return f"✅ {level_label}（{score}/100）：财务指标整体健康。"

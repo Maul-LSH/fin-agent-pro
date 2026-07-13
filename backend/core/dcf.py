@@ -6,6 +6,7 @@ from typing import Optional
 import yfinance as yf
 
 from .utils import retry, safe_round, detect_market
+from .valuation_framework import classify_valuation_framework
 
 
 DEFAULT_RISK_FREE_RATE = 0.045
@@ -360,7 +361,9 @@ def calc_dcf(
         "equity_value": None,
         "terminal_value_pct": None,
         "implied_growth_rate": None,
+        "market_implied_assumptions": [],
         "valuation_context": None,
+        "framework": None,
         "wacc_breakdown": None,
         "warning": None,
         "error": None,
@@ -383,6 +386,10 @@ def calc_dcf(
         special = _is_special_industry(info.get("sector"), info.get("industry"))
         if special:
             result["warning"] = special
+        framework_info = dict(info)
+        framework_info.setdefault("ticker", ticker)
+        framework_info.setdefault("symbol", ticker)
+        result["framework"] = classify_valuation_framework(framework_info)
 
         fcf_history = _calc_fcf_history(cashflow, info)
         current_fcf = _normalized_fcf(fcf_history)
@@ -482,6 +489,23 @@ def calc_dcf(
                     total_years=total_years,
                     stage1_years=stage1_years,
                 )
+                result["market_implied_assumptions"] = _market_implied_assumptions(
+                    current_price=current_price,
+                    intrinsic_value=iv_per_share,
+                    shares=shares,
+                    current_fcf=current_fcf,
+                    discount_rate=discount_rate,
+                    growth_rate=growth_rate,
+                    terminal_growth=terminal_growth,
+                    net_debt=net_debt,
+                    enterprise_value=enterprise_value,
+                    equity_value=equity_value,
+                    terminal_value_pct=result["terminal_value_pct"],
+                    implied_growth_rate=result["implied_growth_rate"],
+                    framework=result["framework"],
+                    total_years=total_years,
+                    stage1_years=stage1_years,
+                )
         result["valuation_context"] = _valuation_context(
             info,
             financials,
@@ -540,6 +564,142 @@ def _solve_implied_growth(
         else:
             high = mid
     return safe_round((low + high) / 2, 4)
+
+
+def _solve_implied_terminal_growth(
+    market_equity_value: float,
+    current_fcf: float,
+    discount_rate: float,
+    growth_rate: float,
+    net_debt: float,
+    total_years: int,
+    stage1_years: int,
+) -> tuple[Optional[float], bool]:
+    target_ev = market_equity_value + net_debt
+    low = -0.02
+    high = min(0.08, discount_rate - 0.005)
+    if high <= low:
+        return None, False
+    high_ev = _project_enterprise_value(
+        current_fcf, discount_rate, growth_rate, high, total_years, stage1_years
+    )
+    capped = target_ev > high_ev
+    for _ in range(60):
+        mid = (low + high) / 2
+        ev = _project_enterprise_value(
+            current_fcf, discount_rate, growth_rate, mid, total_years, stage1_years
+        )
+        if ev < target_ev:
+            low = mid
+        else:
+            high = mid
+    return safe_round((low + high) / 2, 4), capped
+
+
+def _implied_status(value: Optional[float], high: float, extreme: float) -> str:
+    if value is None:
+        return "unknown"
+    if value >= extreme:
+        return "extreme"
+    if value >= high:
+        return "stretched"
+    return "reasonable"
+
+
+def _market_implied_assumptions(
+    current_price: float,
+    intrinsic_value: float,
+    shares: float,
+    current_fcf: float,
+    discount_rate: float,
+    growth_rate: float,
+    terminal_growth: float,
+    net_debt: float,
+    enterprise_value: float,
+    equity_value: float,
+    terminal_value_pct: Optional[float],
+    implied_growth_rate: Optional[float],
+    framework: Optional[dict],
+    total_years: int,
+    stage1_years: int,
+) -> list[dict]:
+    market_equity_value = current_price * shares
+    required_ev = market_equity_value + net_debt
+    premium = market_equity_value - equity_value
+    premium_pct = premium / equity_value * 100 if equity_value else None
+    price_gap_pct = (current_price - intrinsic_value) / intrinsic_value * 100 if intrinsic_value else None
+    implied_terminal_growth, terminal_capped = _solve_implied_terminal_growth(
+        market_equity_value=market_equity_value,
+        current_fcf=current_fcf,
+        discount_rate=discount_rate,
+        growth_rate=growth_rate,
+        net_debt=net_debt,
+        total_years=total_years,
+        stage1_years=stage1_years,
+    )
+    framework_type = (framework or {}).get("type")
+
+    items = [
+        {
+            "key": "stage1_fcf_growth",
+            "label": "Required Stage 1 FCF growth",
+            "value": implied_growth_rate,
+            "unit": "percent",
+            "status": _implied_status(implied_growth_rate, 0.25, 0.45),
+            "baseline": growth_rate,
+            "explanation": "The annual FCF growth rate needed for this DCF structure to reach the current market price.",
+        },
+        {
+            "key": "terminal_growth",
+            "label": "Required terminal growth",
+            "value": implied_terminal_growth,
+            "unit": "percent",
+            "status": "extreme" if terminal_capped else _implied_status(implied_terminal_growth, 0.04, 0.06),
+            "baseline": terminal_growth,
+            "capped": terminal_capped,
+            "explanation": "The perpetual growth rate needed if near-term FCF growth stays at your current assumption.",
+        },
+        {
+            "key": "market_premium",
+            "label": "Market premium vs this DCF",
+            "value": safe_round(premium / 1e9, 2),
+            "unit": "currency_billion",
+            "status": "stretched" if premium > 0 and (premium_pct or 0) > 50 else "reasonable",
+            "baseline": safe_round(equity_value / 1e9, 2),
+            "explanation": "The extra equity value the market is assigning above this explicit DCF scenario.",
+        },
+        {
+            "key": "price_gap",
+            "label": "Share-price gap",
+            "value": safe_round(price_gap_pct, 1),
+            "unit": "percent",
+            "status": "stretched" if price_gap_pct and price_gap_pct > 50 else "reasonable",
+            "baseline": safe_round(intrinsic_value, 2),
+            "explanation": "How far the current market price sits above or below the model's intrinsic value per share.",
+        },
+        {
+            "key": "terminal_value_weight",
+            "label": "Terminal value dependence",
+            "value": terminal_value_pct,
+            "unit": "percent",
+            "status": "stretched" if terminal_value_pct and terminal_value_pct > 75 else "reasonable",
+            "baseline": None,
+            "explanation": "The share of enterprise value coming from terminal value rather than explicit forecast years.",
+        },
+    ]
+
+    if framework_type == "growth_optionality" and premium > 0:
+        items.append({
+            "key": "optionality_premium",
+            "label": "Optionality premium to explain",
+            "value": safe_round(premium / 1e9, 2),
+            "unit": "currency_billion",
+            "status": "stretched" if (premium_pct or 0) > 100 else "reasonable",
+            "baseline": safe_round(required_ev / 1e9, 2),
+            "explanation": "For optionality companies, this is the value that must be justified by drivers such as subscription attach rate, TAM, market share, or success probability.",
+        })
+
+    return items
 
 
 def calc_sensitivity(

@@ -9,7 +9,7 @@
 
 `fin-agent-pro` is a full-stack financial diagnostics platform for US equities, China A-shares, and Hong Kong stocks. It is built for retail investors who want **honest financial analysis grounded in real data, explicit uncertainty, and zero buy/sell advice**.
 
-It combines public-market data, statement-level risk cross-checks, quantitative models, behavior-first market heatmaps, sector-level AI analysis, multi-lens valuation context, portfolio diagnostics, and full-page LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
+It combines public-market data, statement-level risk cross-checks, quantitative models, behavior-first market heatmaps, sector-level AI analysis, valuation frameworks with editable drivers, portfolio diagnostics, and full-page LLM-generated reports — while keeping a bright line between what the data supports and what remains unknown.
 
 ![fin-agent-pro product preview](docs/assets/readme-hero.svg)
 
@@ -39,12 +39,12 @@ Most retail finance tools either show raw ratios without context or ask an AI mo
 - Run explicit risk models and eight financial-statement cross-check scenarios before asking the LLM to explain the results.
 - Surface red flags such as solvency stress, earnings-manipulation risk, weak cash conversion, revenue-recognition pressure, inventory buildup, goodwill impairment risk, hidden debt, and valuation pressure.
 - Treat sector questions as sector questions — mapping the move, the key companies driving it, and what still cannot be known.
-- Treat valuation as a disagreement map, not a single answer: DCF, market price, Wall Street targets, growth, margins, and multiples can all point in different directions.
+- Treat valuation as a framework problem, not a single answer: DCF, market price, Wall Street targets, editable business drivers, growth, margins, and multiples can all point in different directions.
 - Keep user keys and portfolio data local wherever possible.
 
 The result is a practical analyst-style workflow:
 
-**market context -> company fundamentals -> statement cross-checks -> risk model -> valuation context -> AI explanation -> explicit uncertainty -> exportable full-page report**
+**market context -> company fundamentals -> statement cross-checks -> risk model -> valuation framework -> AI explanation -> explicit uncertainty -> exportable full-page report**
 
 ## Product Highlights
 
@@ -55,7 +55,8 @@ The result is a practical analyst-style workflow:
 | **Behavior Heatmap** | “News lags. Trading behavior doesn't.” See where capital attention and volatility are clustering now — not what to buy, but where to look. |
 | **Market Explorer** | Click market indices, heatmap bubbles, or sector rankings to inspect interactive 90-day movement charts. |
 | **Risk Dashboard** | Altman Z-Score, Beneish M-Score, cash-flow quality, receivables checks, five-dimension health scoring, and eight statement-risk scenarios with disclosure-note checklists. |
-| **Valuation Workspace** | 10-year two-stage DCF plus WACC build-up, data-source explanation, implied-growth reverse DCF, Forward P/E, PEG, EV/Sales, EV/Revenue Growth, margin trends, and Wall Street target-price consensus. |
+| **Valuation Workspace** | 10-year two-stage DCF plus WACC build-up, ticker/company-name recognition, valuation framework classification, editable driver-based SOTP models, market-implied assumptions, valuation multiples, margin trends, and Wall Street target-price consensus. |
+| **Executable Driver Models** | Supported companies can move beyond one growth slider. Tesla, for example, can be decomposed into Auto, Energy, FSD subscription, and Robotaxi assumptions with segment revenue, profit, value, SOTP per-share value, and market gap recalculated live. |
 | **High-Growth Caveats** | For hyper-growth companies, DCF is clearly labeled as unstable and treated as a scenario test rather than a target-price verdict. |
 | **Portfolio Diagnostic** | Weighted portfolio risk, pie-chart concentration views, sector exposure, geographic exposure, and per-holding warning signals. |
 | **Multi-Company Compare** | Compare 2-4 companies side by side with visual grids, health bars, best-value markers, financials, valuation, and risk dimensions. |
@@ -92,17 +93,27 @@ The main workflows now behave like proper analysis workspaces rather than small 
 
 ## Valuation Philosophy
 
-`fin-agent-pro` does not pretend that one model can tell you what a company is “really” worth. The valuation page is designed to show disagreement:
+`fin-agent-pro` does not pretend that one model can tell you what a company is “really” worth. The valuation page is designed to pick the right framework first, then show disagreement:
 
 ```text
 Our DCF scenario      vs.      Current market price      vs.      Wall St. target
 ```
 
-For a high-growth stock, that spread is often the signal. The app places DCF next to Forward P/E, PEG, EV/Sales, EV/Revenue Growth, revenue growth, earnings growth, gross margin, operating margin, market-implied growth, and analyst target-price consensus.
+For a high-growth stock, that spread is often the signal. The app places DCF next to valuation-framework classification, Forward P/E, PEG, EV/Sales, EV/Revenue Growth, revenue growth, earnings growth, gross margin, operating margin, market-implied growth, and analyst target-price consensus.
+
+The current valuation engine includes:
+
+- **Ticker resolution:** inputs such as `Tesla`, `特斯拉`, or `摩根大通` can resolve to the appropriate US-listed ticker before valuation runs.
+- **Framework generator:** companies are mapped into valuation archetypes such as stable FCF compounder, software/cloud platform, AI semiconductor cycle, growth optionality company, bank, REIT, pharma/biotech pipeline, or energy/commodity producer.
+- **Driver library:** framework templates expose the relevant revenue, margin, capital, probability, optionality, financial-sector, or real-asset drivers.
+- **Executable driver valuation:** the first live driver model supports Tesla-style optionality SOTP across Auto, Energy, FSD subscription, and Robotaxi.
+- **Market-implied assumptions:** the model back-solves what the current market price must believe, including required FCF growth, terminal growth, market premium versus the DCF case, terminal-value dependence, and optionality premium where relevant.
+
+Tesla is the canonical example: a simple DCF may sit far below the current market price, but the editable driver model turns that gap into explicit assumptions around vehicle deliveries, ASP, Energy growth, FSD attach rate, monthly ARPU, Robotaxi TAM, market share, take rate, and success probability.
 
 When a company shows high-growth or high-volatility traits, DCF is explicitly marked as **extremely unstable**. The intrinsic value is presented as a scenario output, not a verdict.
 
-Analyst targets are treated the same way: useful as a second opinion, but not as truth. If Yahoo Finance provides recent firm-level rating actions, the Wall Street target card can open a side drawer with the available coverage history. If it only provides aggregate consensus, the UI says so instead of inventing precision.
+Analyst targets are treated the same way: useful as a second opinion, but not as truth. The current Wall Street target card is sourced from Yahoo Finance via yfinance; it may be delayed or incomplete. If Yahoo Finance provides recent firm-level rating actions, the card can open a side drawer with the available coverage history. If it only provides aggregate consensus, the UI says so instead of inventing precision.
 
 ## Market Heatmap Principle
 
@@ -135,7 +146,7 @@ fin-agent-pro/
 │   ├── routers/
 │   │   ├── markets.py            # market overview, sectors, attention, history
 │   │   ├── analysis.py           # AI analysis and company comparison
-│   │   ├── valuation.py          # DCF and sensitivity endpoints
+│   │   ├── valuation.py          # DCF, framework, symbol resolution, driver valuation endpoints
 │   │   └── portfolio.py          # portfolio diagnostics
 │   └── core/
 │       ├── data.py               # unified company data ingestion
@@ -145,7 +156,10 @@ fin-agent-pro/
 │       ├── sectors.py            # sector rankings and history
 │       ├── attention.py          # sector attention / volatility scoring
 │       ├── risk.py               # Altman, Beneish, cash quality, red flags
-│       ├── dcf.py                # WACC + two-stage DCF engine
+│       ├── dcf.py                # WACC + two-stage DCF engine + market-implied assumptions
+│       ├── valuation_framework.py # framework classification + driver templates
+│       ├── driver_valuation.py   # executable driver-based SOTP models
+│       ├── symbols.py            # company-name / ticker resolution
 │       └── agent.py              # LLM orchestration and report generation
 │
 └── frontend/
@@ -235,7 +249,7 @@ Open `http://localhost:3000`.
 2. Click an index, sector bubble, or sector ranking row to inspect the interactive movement chart.
 3. From a sector card, open **Sector Radar** to understand the move, its likely drivers, and the key companies behind it.
 4. Open **AI Analysis** for a full-page company-level financial report workspace.
-5. Use **Valuation** to compare DCF, market price, Wall Street targets, multiples, growth, and margin quality.
+5. Use **Valuation** to compare DCF, market price, Wall Street targets, multiples, growth, margin quality, valuation frameworks, editable drivers, and market-implied assumptions.
 6. Use **Portfolio** to diagnose concentration and weighted risk.
 7. Return to any workflow without re-entering your previous tickers or assumptions.
 8. Export reports to PDF when you need a snapshot.
@@ -258,6 +272,9 @@ Open `http://localhost:3000`.
 - [x] SEC EDGAR ingestion for US equities
 - [x] FMP fallback + persistent stale cache
 - [x] Two-stage DCF with WACC build-up and implied-growth reverse DCF
+- [x] Valuation framework generator with ticker/name resolution and driver templates
+- [x] Executable Tesla driver valuation across Auto, Energy, FSD subscription, and Robotaxi
+- [x] Market-implied assumptions for required growth, terminal growth, valuation premium, and optionality gap
 - [x] Valuation context with analyst targets, multiples, margin trends, and high-growth caveats
 - [x] Behavior-first sector heatmap messaging across US, China A, and Hong Kong market pages
 - [x] Local workflow memory for valuation, compare, analysis, and portfolio modules

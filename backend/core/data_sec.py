@@ -68,8 +68,10 @@ def get_us_financial_data_sec(ticker: str, period: str) -> dict:
         "market": "us",
         "ticker": ticker,
         "period": period,
+        "requested_period": str(period),
         "data_source": "sec_edgar",
     }
+    section_periods = {}
 
     company = Company(ticker)
     if not company:
@@ -86,6 +88,7 @@ def get_us_financial_data_sec(ticker: str, period: str) -> dict:
         if income_df is not None and not income_df.empty:
             year_col = _find_year_column(income_df.columns, period)
             if year_col:
+                section_periods["income"] = _year_from_column(year_col)
                 metrics = _extract_income(income_df, year_col)
                 if metrics:
                     result["income"] = metrics
@@ -99,6 +102,7 @@ def get_us_financial_data_sec(ticker: str, period: str) -> dict:
         if balance_df is not None and not balance_df.empty:
             year_col = _find_year_column(balance_df.columns, period)
             if year_col:
+                section_periods["balance"] = _year_from_column(year_col)
                 metrics = _extract_balance(balance_df, year_col)
                 if metrics:
                     result["balance"] = metrics
@@ -112,6 +116,7 @@ def get_us_financial_data_sec(ticker: str, period: str) -> dict:
         if cashflow_df is not None and not cashflow_df.empty:
             year_col = _find_year_column(cashflow_df.columns, period)
             if year_col:
+                section_periods["cashflow"] = _year_from_column(year_col)
                 metrics = _extract_cashflow(cashflow_df, year_col)
                 if metrics:
                     result["cashflow"] = metrics
@@ -127,6 +132,13 @@ def get_us_financial_data_sec(ticker: str, period: str) -> dict:
     # 至少要有一张表才算成功
     if not any(k in result for k in ("income", "balance", "cashflow")):
         raise ValueError(f"No financial data extracted for {ticker} period={period}")
+
+    actual = _resolve_actual_period(section_periods)
+    result["statement_periods"] = section_periods
+    result["actual_period_used"] = actual
+    result["resolved_period"] = actual or str(period)
+    result["period_matched"] = bool(actual and str(actual) == str(period))
+    result["is_stale"] = False
 
     return result
 
@@ -176,6 +188,21 @@ def _find_year_column(columns, period: str) -> Optional[str]:
             return col
 
     return None
+
+
+def _year_from_column(col) -> Optional[str]:
+    match = re.search(r"\b(20\d{2}|19\d{2})\b", str(col))
+    return match.group(1) if match else None
+
+
+def _resolve_actual_period(section_periods: dict) -> Optional[str]:
+    counts: dict[str, int] = {}
+    for year in section_periods.values():
+        if year:
+            counts[str(year)] = counts.get(str(year), 0) + 1
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)[0][0]
 
 
 # ─────────────────────────────────────────

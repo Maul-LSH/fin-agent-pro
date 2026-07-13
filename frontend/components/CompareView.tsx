@@ -23,7 +23,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { apiClient, type CompanySnapshot, type CompareResponse } from "@/lib/api";
-import { useT } from "@/lib/AppContext";
+import { useApp, useT, type Lang } from "@/lib/AppContext";
 import { ExportPDFButton } from "./ExportPDFButton";
 
 const MAX_COMPANIES = 4;
@@ -33,6 +33,7 @@ interface CompareStoredState {
   tickerInput: string;
   tickers: string[];
   data: CompareResponse | null;
+  lang: Lang;
 }
 
 function loadCompareStoredState(): Partial<CompareStoredState> | null {
@@ -150,12 +151,18 @@ interface Props {
 
 export function CompareView({ onClose }: Props) {
   const t = useT();
+  const { lang } = useApp();
   const [storedState] = useState(loadCompareStoredState);
-  const [tickerInput, setTickerInput] = useState(storedState?.tickerInput ?? "");
-  const [tickers, setTickers] = useState<string[]>(
-    Array.isArray(storedState?.tickers) ? storedState.tickers : []
+  const shouldRestoreStoredState = storedState?.lang === lang;
+  const [tickerInput, setTickerInput] = useState(
+    shouldRestoreStoredState ? storedState?.tickerInput ?? "" : ""
   );
-  const [data, setData] = useState<CompareResponse | null>(storedState?.data ?? null);
+  const [tickers, setTickers] = useState<string[]>(
+    shouldRestoreStoredState && Array.isArray(storedState?.tickers) ? storedState.tickers : []
+  );
+  const [data, setData] = useState<CompareResponse | null>(
+    shouldRestoreStoredState ? storedState?.data ?? null : null
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
@@ -173,7 +180,7 @@ export function CompareView({ onClose }: Props) {
     try {
       localStorage.setItem(
         COMPARE_STORAGE_KEY,
-        JSON.stringify({ tickerInput, tickers, data })
+        JSON.stringify({ tickerInput, tickers, data, lang })
       );
     } catch {}
   }, [tickerInput, tickers, data]);
@@ -207,7 +214,7 @@ export function CompareView({ onClose }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.compare({ tickers });
+      const res = await apiClient.compare({ tickers, lang });
       setData(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("compareFailed"));
@@ -232,20 +239,12 @@ export function CompareView({ onClose }: Props) {
     setInputFocused(false);
   };
 
-  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
-    if (workspaceActive) {
-      backToIntro();
-    }
-  };
-
   // PDF 导出由 ExportPDFButton 组件处理（targetId="compare-content"）
 
   const numCols = data?.companies.length || 0;
 
   return (
-    <section className="relative" onMouseDownCapture={handleBlankMouseDown}>
+    <section className="relative">
       <motion.div
         animate={{
           opacity: workspaceActive ? 0.2 : 1,
@@ -411,7 +410,9 @@ export function CompareView({ onClose }: Props) {
                 const level = c.risk.risk_level || "low";
                 const levelStyle = {
                   low: "from-emerald-500 to-green-600",
+                  medium_low: "from-sky-500 to-blue-600",
                   medium: "from-amber-500 to-orange-600",
+                  medium_high: "from-orange-500 to-rose-600",
                   high: "from-rose-500 to-red-600",
                 }[level];
                 return (
@@ -422,11 +423,7 @@ export function CompareView({ onClose }: Props) {
                     <div className="text-4xl font-bold tabular-nums">{score}</div>
                     <div className="text-xs opacity-90 mt-1">/100</div>
                     <div className="text-xs font-medium mt-2 capitalize">
-                      {level === "high"
-                        ? t("riskHigh")
-                        : level === "medium"
-                          ? t("riskMedium")
-                          : t("riskLow")}
+                      {t(`riskLevel_${level}`)}
                     </div>
                   </div>
                 );

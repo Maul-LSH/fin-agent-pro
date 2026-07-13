@@ -4,6 +4,8 @@ core/data.py — 财务数据获取层
 内部根据市场分流到 yfinance（美股）或 AkShare（A 股）
 """
 
+import re
+
 import yfinance as yf
 import akshare as ak
 
@@ -12,7 +14,6 @@ from .utils import (
     safe_round,
     to_billion,
     to_yi,
-    find_year_column,
     detect_market,
     normalize_ticker,
     cached_fetch,
@@ -23,6 +24,57 @@ from . import fmp
 
 QUOTE_TTL = 30 * 60
 STALE_TTL = 30 * 24 * 60 * 60
+
+
+def _year_from_column(col) -> str | None:
+    """Best-effort fiscal year extraction from source-specific statement columns."""
+    if col is None:
+        return None
+    year = getattr(col, "year", None)
+    if year:
+        return str(year)
+    match = re.search(r"\b(20\d{2}|19\d{2})\b", str(col))
+    return match.group(1) if match else None
+
+
+def _find_statement_column(columns, period: str):
+    """
+    Find the requested fiscal year first; if unavailable, fall back to the latest
+    available column and return metadata so the UI can disclose the mismatch.
+    """
+    cols = [] if columns is None else list(columns)
+    requested = str(period)
+    for col in cols:
+        if _year_from_column(col) == requested:
+            return col, requested, True
+    if cols:
+        col = cols[0]
+        return col, _year_from_column(col), False
+    return None, None, False
+
+
+def _resolve_actual_period(section_periods: dict) -> str | None:
+    counts: dict[str, int] = {}
+    for year in section_periods.values():
+        if year:
+            counts[str(year)] = counts.get(str(year), 0) + 1
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)[0][0]
+
+
+def _apply_period_metadata(result: dict, requested_period: str, section_periods: dict | None = None) -> dict:
+    section_periods = section_periods or result.get("statement_periods") or {}
+    actual_period = result.get("actual_period_used") or _resolve_actual_period(section_periods)
+    result["requested_period"] = str(requested_period)
+    result["actual_period_used"] = actual_period
+    result["resolved_period"] = actual_period or str(requested_period)
+    result["period_matched"] = bool(actual_period and str(actual_period) == str(requested_period))
+    result["is_stale"] = bool(result.get("_stale"))
+    if section_periods:
+        result["statement_periods"] = section_periods
+    result.setdefault("data_source", "unknown")
+    return result
 
 
 # ─────────────────────────────────────────
@@ -93,18 +145,30 @@ def get_financial_data(ticker: str, period: str) -> dict:
     if market == "us":
         return _us_financial_data_with_fallback(norm, period)
     if market == "hk":
-        return persistent_cached_fetch(
+        result = persistent_cached_fetch(
             f"financial.hk.{norm}.{period}",
             lambda: _hk_financial_data_with_fallback(norm, period),
             ttl=QUOTE_TTL,
             stale_ttl=STALE_TTL,
-        ) or {"market": "hk", "ticker": norm, "period": period, "error": "No cached or live financial data available"}
-    return persistent_cached_fetch(
+        )
+        return _apply_period_metadata(result, period) if result else _apply_period_metadata({
+            "market": "hk",
+            "ticker": norm,
+            "period": period,
+            "error": "No cached or live financial data available",
+        }, period)
+    result = persistent_cached_fetch(
         f"financial.cn.{norm}.{period}",
         lambda: _cn_financial_data_with_fallback(norm, period),
         ttl=QUOTE_TTL,
         stale_ttl=STALE_TTL,
-    ) or {"market": "cn", "ticker": norm, "period": period, "error": "No cached or live financial data available"}
+    )
+    return _apply_period_metadata(result, period) if result else _apply_period_metadata({
+        "market": "cn",
+        "ticker": norm,
+        "period": period,
+        "error": "No cached or live financial data available",
+    }, period)
 
 
 def _has_financial_sections(data: dict) -> bool:
@@ -115,28 +179,28 @@ def _cn_financial_data_with_fallback(ticker: str, period: str) -> dict:
     result = _cn_financial_data(ticker, period)
     if _has_financial_sections(result):
         result.setdefault("data_source", "akshare_cn")
-        return result
+        return _apply_period_metadata(result, period)
 
     fmp_data = fmp.financial_data(fmp.cn_symbol(ticker), period, market="cn", ticker=ticker)
     if fmp_data:
         if result.get("valuation_error") or result.get("financial_error"):
             fmp_data["akshare_fallback_reason"] = result.get("financial_error") or result.get("valuation_error")
-        return fmp_data
-    return result
+        return _apply_period_metadata(fmp_data, period)
+    return _apply_period_metadata(result, period)
 
 
 def _hk_financial_data_with_fallback(ticker: str, period: str) -> dict:
     result = _hk_financial_data(ticker, period)
     if _has_financial_sections(result):
         result.setdefault("data_source", "akshare_hk")
-        return result
+        return _apply_period_metadata(result, period)
 
     fmp_data = fmp.financial_data(fmp.hk_symbol(ticker), period, market="hk", ticker=ticker)
     if fmp_data:
         if result.get("valuation_error") or result.get("financial_error"):
             fmp_data["akshare_fallback_reason"] = result.get("financial_error") or result.get("valuation_error")
-        return fmp_data
-    return result
+        return _apply_period_metadata(fmp_data, period)
+    return _apply_period_metadata(result, period)
 
 
 def _us_financial_data_with_fallback(ticker: str, period: str) -> dict:
@@ -166,7 +230,7 @@ def _us_financial_data_with_fallback(ticker: str, period: str) -> dict:
         result["data_source"] = "yfinance"
         if sec_error:
             result["sec_fallback_reason"] = sec_error
-        return result
+        return _apply_period_metadata(result, period)
 
     # SEC 成功 → 用 yfinance 补充估值数据（PE / PB / Market Cap 等）
     try:
@@ -187,12 +251,13 @@ def _us_financial_data_with_fallback(ticker: str, period: str) -> dict:
         # 即使补充失败，SEC 主数据仍可用
         pass
 
-    return sec_data
+    return _apply_period_metadata(sec_data, period)
 
 
 def _us_financial_data(ticker: str, period: str) -> dict:
     """美股财务数据（yfinance）— 作为 SEC EDGAR 的 fallback + 估值数据补充"""
     result = {"market": "us", "ticker": ticker, "period": period}
+    section_periods = {}
 
     try:
         stock = yf.Ticker(ticker)
@@ -213,8 +278,9 @@ def _us_financial_data(ticker: str, period: str) -> dict:
 
         income = retry(lambda: stock.income_stmt, retries=2)
         if income is not None and not income.empty:
-            col = find_year_column(income.columns, period)
+            col, actual_year, _ = _find_statement_column(income.columns, period)
             if col is not None:
+                section_periods["income"] = actual_year
                 row = income[col]
                 result["income"] = {
                     "Revenue (B)": to_billion(row.get("Total Revenue")),
@@ -234,8 +300,9 @@ def _us_financial_data(ticker: str, period: str) -> dict:
 
         balance = retry(lambda: stock.balance_sheet, retries=2)
         if balance is not None and not balance.empty:
-            col = find_year_column(balance.columns, period)
+            col, actual_year, _ = _find_statement_column(balance.columns, period)
             if col is not None:
+                section_periods["balance"] = actual_year
                 row = balance[col]
                 ta = row.get("Total Assets")
                 tl = row.get("Total Liabilities Net Minority Interest")
@@ -251,8 +318,9 @@ def _us_financial_data(ticker: str, period: str) -> dict:
 
         cashflow = retry(lambda: stock.cashflow, retries=2)
         if cashflow is not None and not cashflow.empty:
-            col = find_year_column(cashflow.columns, period)
+            col, actual_year, _ = _find_statement_column(cashflow.columns, period)
             if col is not None:
+                section_periods["cashflow"] = actual_year
                 row = cashflow[col]
                 result["cashflow"] = {
                     "Operating Cash Flow (B)": to_billion(row.get("Operating Cash Flow")),
@@ -263,9 +331,10 @@ def _us_financial_data(ticker: str, period: str) -> dict:
         # ROE
         if income is not None and balance is not None:
             try:
-                col = find_year_column(income.columns, period)
-                ni = income[col].get("Net Income") if col is not None else None
-                eq = balance[col].get("Stockholders Equity") if col is not None else None
+                income_col, _, _ = _find_statement_column(income.columns, period)
+                balance_col, _, _ = _find_statement_column(balance.columns, period)
+                ni = income[income_col].get("Net Income") if income_col is not None else None
+                eq = balance[balance_col].get("Stockholders Equity") if balance_col is not None else None
                 if ni and eq and eq > 0:
                     result.setdefault("indicators", {})["ROE (%)"] = safe_round(ni / eq * 100, 2)
             except Exception:
@@ -274,12 +343,13 @@ def _us_financial_data(ticker: str, period: str) -> dict:
     except Exception as e:
         result["error"] = str(e)
 
-    return result
+    return _apply_period_metadata(result, period, section_periods)
 
 
 def _cn_financial_data(ticker: str, period: str) -> dict:
     """A 股财务数据（AkShare）"""
     result = {"market": "cn", "ticker": ticker, "period": period}
+    section_periods = {}
 
     # 实时行情（估值）
     try:
@@ -307,6 +377,12 @@ def _cn_financial_data(ticker: str, period: str) -> dict:
         if abstract is not None and not abstract.empty:
             year_col = f"{period}1231"
             if year_col in abstract.columns:
+                section_periods = {
+                    "income": str(period),
+                    "balance": str(period),
+                    "cashflow": str(period),
+                    "indicators": str(period),
+                }
                 indicators_row = {}
                 for _, r in abstract.iterrows():
                     key = r.get("指标")
@@ -342,7 +418,7 @@ def _cn_financial_data(ticker: str, period: str) -> dict:
     except Exception as e:
         result["financial_error"] = str(e)
 
-    return result
+    return _apply_period_metadata(result, period, section_periods)
 
 
 # ─────────────────────────────────────────
@@ -392,6 +468,7 @@ def _hk_financial_data(ticker: str, period: str) -> dict:
         "period": period,
         "data_source": "akshare_hk",
     }
+    section_periods = {}
 
     # ── 行情/估值 ──
     try:
@@ -429,6 +506,7 @@ def _hk_financial_data(ticker: str, period: str) -> dict:
         if income_df is not None and not income_df.empty:
             period_df = _hk_filter_period(income_df, period)
             if period_df is not None and not period_df.empty:
+                section_periods["income"] = _hk_period_from_df(period_df)
                 result["income"] = _hk_extract_income(period_df)
 
         bal_df = retry(
@@ -440,6 +518,7 @@ def _hk_financial_data(ticker: str, period: str) -> dict:
         if bal_df is not None and not bal_df.empty:
             period_df = _hk_filter_period(bal_df, period)
             if period_df is not None and not period_df.empty:
+                section_periods["balance"] = _hk_period_from_df(period_df)
                 result["balance"] = _hk_extract_balance(period_df)
 
         cf_df = retry(
@@ -451,11 +530,28 @@ def _hk_financial_data(ticker: str, period: str) -> dict:
         if cf_df is not None and not cf_df.empty:
             period_df = _hk_filter_period(cf_df, period)
             if period_df is not None and not period_df.empty:
+                section_periods["cashflow"] = _hk_period_from_df(period_df)
                 result["cashflow"] = _hk_extract_cashflow(period_df)
     except Exception as e:
         result["financial_error"] = str(e)
 
-    return result
+    return _apply_period_metadata(result, period, section_periods)
+
+
+def _hk_period_from_df(df) -> str | None:
+    if df is None or df.empty:
+        return None
+    for col in ["REPORT_DATE", "FISCAL_YEAR", "报告期"]:
+        if col not in df.columns:
+            continue
+        try:
+            value = str(df[col].iloc[0])
+            match = re.search(r"\b(20\d{2}|19\d{2})\b", value)
+            if match:
+                return match.group(1)
+        except Exception:
+            continue
+    return None
 
 
 def _hk_filter_period(df, period: str):

@@ -6,6 +6,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from core.dcf import calc_dcf, calc_sensitivity, suggested_dcf_assumptions
+from core.driver_valuation import calculate_driver_valuation, default_driver_assumptions
+from core.symbols import resolve_symbol
 
 
 router = APIRouter(prefix="/api", tags=["valuation"])
@@ -21,6 +23,42 @@ class DCFRequest(BaseModel):
 
 class DCFTickerRequest(BaseModel):
     ticker: str
+
+
+class SymbolResolveRequest(BaseModel):
+    query: str
+
+
+class DriverValuationRequest(BaseModel):
+    ticker: str
+    assumptions: dict | None = None
+    shares_outstanding_b: float | None = None
+    net_debt_b: float | None = None
+    current_price: float | None = None
+
+
+@router.post("/symbol/resolve")
+def symbol_resolve(req: SymbolResolveRequest):
+    """Resolve a company name or loose input into US-listed ticker candidates."""
+    return resolve_symbol(req.query)
+
+
+@router.post("/valuation/drivers/defaults")
+def driver_defaults(req: DCFTickerRequest):
+    """Return editable default driver assumptions for supported companies."""
+    return default_driver_assumptions(req.ticker)
+
+
+@router.post("/valuation/drivers")
+def driver_valuation(req: DriverValuationRequest):
+    """Calculate an editable driver-based SOTP valuation."""
+    return calculate_driver_valuation(
+        req.ticker,
+        req.assumptions,
+        shares_outstanding_b=req.shares_outstanding_b,
+        net_debt_b=req.net_debt_b,
+        current_price=req.current_price,
+    )
 
 
 @router.post("/dcf")

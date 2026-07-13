@@ -24,7 +24,7 @@ import ReactMarkdown from "react-markdown";
 import { apiClient, type AnalyzeResponse } from "@/lib/api";
 import { RiskDashboard } from "./RiskDashboard";
 import { ExportPDFButton } from "./ExportPDFButton";
-import { useT, useApp } from "@/lib/AppContext";
+import { useT, useApp, type Lang } from "@/lib/AppContext";
 
 interface Props {
   apiKey: string;
@@ -55,6 +55,7 @@ interface AnalysisStoredState {
   input: string;
   result: AnalyzeResponse | null;
   mode: "company" | "sector";
+  lang: Lang;
 }
 
 function loadAnalysisStoredState(): Partial<AnalysisStoredState> | null {
@@ -78,7 +79,7 @@ export function AnalysisChat({
   const t = useT();
   const { lang } = useApp();
   const [storedState] = useState(() => (initialQuery ? null : loadAnalysisStoredState()));
-  const shouldRestoreStoredState = storedState?.mode === analysisMode;
+  const shouldRestoreStoredState = storedState?.mode === analysisMode && storedState?.lang === lang;
   const [input, setInput] = useState(
     initialQuery ?? (shouldRestoreStoredState ? storedState?.input ?? "" : "")
   );
@@ -108,10 +109,10 @@ export function AnalysisChat({
     try {
       localStorage.setItem(
         ANALYSIS_STORAGE_KEY,
-        JSON.stringify({ input, result, mode: analysisMode })
+        JSON.stringify({ input, result, mode: analysisMode, lang })
       );
     } catch {}
-  }, [input, result, analysisMode]);
+  }, [input, result, analysisMode, lang]);
 
   const handleSubmit = async (text?: string) => {
     const query = text ?? input;
@@ -168,14 +169,6 @@ export function AnalysisChat({
     return () => window.removeEventListener("scroll", onScroll);
   }, [workspaceActive]);
 
-  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
-    if (workspaceActive) {
-      handleBackToIntro();
-    }
-  };
-
   const queryComposer = (
     <div className="relative">
       <input
@@ -213,7 +206,7 @@ export function AnalysisChat({
   );
 
   return (
-    <section className="relative" onMouseDownCapture={handleBlankMouseDown}>
+    <section className="relative">
       <motion.div
         animate={{
           opacity: workspaceActive ? 0.28 : 1,
@@ -408,8 +401,37 @@ export function AnalysisChat({
                       {result.company.ticker} ·{" "}
                       {result.company.market === "us"
                         ? t("usMarket")
-                        : t("cnMarket")}{" "}
-                      · {result.intent.period}
+                        : result.company.market === "hk"
+                          ? t("hkMarket")
+                          : t("cnMarket")}{" "}
+                      · FY {result.resolved_period || result.intent.period}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-md bg-white/10 px-2.5 py-1 text-slate-200">
+                        {t("requestedPeriod")}: {result.requested_period || result.intent.period}
+                      </span>
+                      <span
+                        className={`rounded-md px-2.5 py-1 ${
+                          result.period_matched === false
+                            ? "bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/30"
+                            : "bg-white/10 text-slate-200"
+                        }`}
+                      >
+                        {t("actualFiscalYear")}: {result.actual_period_used || result.resolved_period || "—"}
+                      </span>
+                      <span className="rounded-md bg-white/10 px-2.5 py-1 text-slate-200">
+                        {t("dataSource")}: {result.data_source || "unknown"}
+                      </span>
+                      {result.period_matched === false && (
+                        <span className="rounded-md bg-amber-400/20 px-2.5 py-1 text-amber-100 ring-1 ring-amber-300/30">
+                          {t("periodMismatch")}
+                        </span>
+                      )}
+                      {result.is_stale && (
+                        <span className="rounded-md bg-rose-400/20 px-2.5 py-1 text-rose-100 ring-1 ring-rose-300/30">
+                          {t("staleData")}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">

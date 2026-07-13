@@ -19,6 +19,9 @@ import {
   FileSearch,
   ClipboardCheck,
   CircleHelp,
+  Route,
+  CheckCircle2,
+  Gauge,
 } from "lucide-react";
 import { useT } from "@/lib/AppContext";
 
@@ -40,9 +43,29 @@ interface DimensionScores {
 
 interface RiskData {
   overall_score: number | null;
-  risk_level: "low" | "medium" | "high" | null;
+  risk_level: RiskLevel | null;
   summary: string;
-  altman_z?: { score: number; interpretation: string; risk_level: string } | null;
+  altman_z?: {
+    score: number;
+    interpretation: string;
+    risk_level: string;
+    model?: string;
+    model_name?: string;
+    applicability?: string;
+    distress_threshold?: number;
+    safe_threshold?: number;
+  } | null;
+  industry_profile?: {
+    type: string;
+    confidence: number;
+    sector?: string | null;
+    industry?: string | null;
+    signals: string[];
+    recommended_model: string;
+    altman_applicable: boolean;
+    altman_variant?: string | null;
+    note: string;
+  } | null;
   beneish_m?: { score: number; interpretation: string; risk_level: string } | null;
   cash_quality?: {
     ratio: number | null;
@@ -60,7 +83,34 @@ interface RiskData {
   red_flags: RedFlag[];
   risk_scenarios?: RiskScenario[];
   disclosure_checks?: DisclosureCheck[];
+  model_confidence?: {
+    level: "low" | "medium" | "high";
+    score: number;
+    reasons: string[];
+  } | null;
+  risk_drivers?: Array<{
+    title: string;
+    description: string;
+    severity: "high" | "medium" | "low";
+    metric?: string | number | null;
+  }>;
+  mitigating_factors?: Array<{
+    title: string;
+    description: string;
+    metric?: string | number | null;
+  }>;
+  stress_tests?: Array<{
+    id: string;
+    title: string;
+    base_score: number;
+    stressed_score: number;
+    risk_level: RiskLevel;
+    delta: number;
+    summary: string;
+  }>;
 }
+
+type RiskLevel = "low" | "medium_low" | "medium" | "medium_high" | "high";
 
 interface RiskScenario {
   id: string;
@@ -93,9 +143,11 @@ interface Props {
 
 const LEVEL_COLORS = {
   low: { bg: "from-emerald-500 to-green-600", icon: ShieldCheck },
+  medium_low: { bg: "from-sky-500 to-blue-600", icon: ShieldCheck },
   medium: { bg: "from-amber-500 to-orange-600", icon: Shield },
+  medium_high: { bg: "from-orange-500 to-rose-600", icon: AlertTriangle },
   high: { bg: "from-rose-500 to-red-600", icon: AlertTriangle },
-};
+} satisfies Record<RiskLevel, { bg: string; icon: typeof ShieldCheck }>;
 
 const SEVERITY_STYLES = {
   high: {
@@ -125,8 +177,13 @@ export function RiskDashboard({ data }: Props) {
   const levelConfig = LEVEL_COLORS[level];
   const Icon = levelConfig.icon;
 
-  const levelLabel =
-    level === "high" ? t("riskHigh") : level === "medium" ? t("riskMedium") : t("riskLow");
+  const levelLabel = t(`riskLevel_${level}`);
+  const basedOnText =
+    data.industry_profile?.altman_applicable === false
+      ? t("riskBasedOnNoAltman")
+      : data.altman_z?.model === "z_double_prime"
+        ? t("riskBasedOnZDoublePrime")
+        : t("riskBasedOn");
 
   const dimLabels: Record<string, string> = {
     profitability: t("dimProfitability"),
@@ -162,10 +219,40 @@ export function RiskDashboard({ data }: Props) {
             <p className="text-white/90 text-base leading-relaxed">
               {data.summary}
             </p>
-            <div className="mt-3 text-sm text-white/80">{t("riskBasedOn")}</div>
+            <div className="mt-3 text-sm text-white/80">{basedOnText}</div>
           </div>
         </div>
       </motion.div>
+
+      {data.industry_profile && (
+        <IndustryModelCard profile={data.industry_profile} />
+      )}
+
+      {(data.model_confidence || (data.risk_drivers && data.risk_drivers.length > 0) || (data.mitigating_factors && data.mitigating_factors.length > 0)) && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {data.model_confidence && <ConfidenceCard confidence={data.model_confidence} />}
+          {data.risk_drivers && data.risk_drivers.length > 0 && (
+            <SignalListCard
+              icon={<AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />}
+              title={t("riskDriversTitle")}
+              items={data.risk_drivers}
+              tone="risk"
+            />
+          )}
+          {data.mitigating_factors && data.mitigating_factors.length > 0 && (
+            <SignalListCard
+              icon={<CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />}
+              title={t("riskMitigantsTitle")}
+              items={data.mitigating_factors}
+              tone="mitigant"
+            />
+          )}
+        </div>
+      )}
+
+      {data.stress_tests && data.stress_tests.length > 0 && (
+        <StressTestPanel tests={data.stress_tests} />
+      )}
 
       {data.red_flags.length > 0 && (
         <motion.div
@@ -275,8 +362,12 @@ export function RiskDashboard({ data }: Props) {
           {data.altman_z && (
             <MetricCard
               icon={<Shield className="w-5 h-5" />}
-              title={t("metricAltman")}
-              subtitle={t("metricAltmanSub")}
+              title={data.altman_z.model_name || t("metricAltman")}
+              subtitle={
+                data.altman_z.model === "z_double_prime"
+                  ? t("metricAltmanZDoublePrimeSub")
+                  : t("metricAltmanSub")
+              }
               value={data.altman_z.score}
               level={data.altman_z.risk_level as "low" | "medium" | "high"}
               interpretation={data.altman_z.interpretation}
@@ -319,6 +410,201 @@ export function RiskDashboard({ data }: Props) {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+function IndustryModelCard({
+  profile,
+}: {
+  profile: NonNullable<RiskData["industry_profile"]>;
+}) {
+  const t = useT();
+  const profileLabel = t(`industryProfile_${profile.type}`);
+  const modelLabel = t(`riskModel_${profile.recommended_model}`);
+  const note =
+    profile.altman_applicable
+      ? profile.altman_variant === "original"
+        ? t("industryModelOriginalNote")
+        : t("industryModelZDoublePrimeNote")
+      : t("industryModelNotApplicableNote");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.05 }}
+      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5"
+    >
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <Route className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            {t("industryModelTitle")}
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+            {note}
+          </p>
+        </div>
+        <div className="grid gap-2 text-sm md:min-w-72">
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 dark:text-slate-400">{t("industryProfileLabel")}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100 text-right">{profileLabel}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 dark:text-slate-400">{t("industryModelLabel")}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100 text-right">{modelLabel}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 dark:text-slate-400">{t("industryConfidenceLabel")}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100 tabular-nums">
+              {Math.round(profile.confidence * 100)}%
+            </span>
+          </div>
+        </div>
+      </div>
+      {profile.signals.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {profile.signals.slice(0, 6).map((signal) => (
+            <span
+              key={signal}
+              className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-300"
+            >
+              {signal}
+            </span>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ConfidenceCard({
+  confidence,
+}: {
+  confidence: NonNullable<RiskData["model_confidence"]>;
+}) {
+  const t = useT();
+  const tone =
+    confidence.level === "high"
+      ? "border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30"
+      : confidence.level === "medium"
+        ? "border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30"
+        : "border-rose-200 dark:border-rose-900 bg-rose-50/60 dark:bg-rose-950/30";
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-2xl border ${tone} p-5`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+          <Gauge className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          {t("modelConfidenceTitle")}
+        </div>
+        <span className="rounded-md bg-white/70 dark:bg-slate-900/70 px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100 tabular-nums">
+          {confidence.score}/100
+        </span>
+      </div>
+      <div className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        {t(`confidence_${confidence.level}`)}
+      </div>
+      <div className="mt-3 space-y-2">
+        {confidence.reasons.slice(0, 3).map((reason) => (
+          <p key={reason} className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+            {reason}
+          </p>
+        ))}
+      </div>
+    </motion.article>
+  );
+}
+
+function SignalListCard({
+  icon,
+  title,
+  items,
+  tone,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  items: Array<{ title: string; description: string; severity?: "high" | "medium" | "low"; metric?: string | number | null }>;
+  tone: "risk" | "mitigant";
+}) {
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5"
+    >
+      <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+        {icon}
+        {title}
+      </div>
+      <div className="mt-4 space-y-3">
+        {items.slice(0, 4).map((item) => (
+          <div key={`${title}-${item.title}`} className="border-l-2 border-slate-200 dark:border-slate-800 pl-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                {item.title}
+              </div>
+              {item.metric !== undefined && item.metric !== null && (
+                <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                  tone === "risk"
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                    : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                }`}>
+                  {item.metric}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              {item.description}
+            </p>
+          </div>
+        ))}
+      </div>
+    </motion.article>
+  );
+}
+
+function StressTestPanel({
+  tests,
+}: {
+  tests: NonNullable<RiskData["stress_tests"]>;
+}) {
+  const t = useT();
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5"
+    >
+      <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+        <Gauge className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        {t("stressTestsTitle")}
+      </div>
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+        {tests.map((test) => (
+          <div key={test.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3">
+            <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+              {test.title}
+            </div>
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-2xl font-bold tabular-nums text-slate-950 dark:text-white">
+                {test.stressed_score}
+              </span>
+              <span className="pb-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                +{test.delta}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              {test.summary}
+            </p>
+          </div>
+        ))}
+      </div>
+    </motion.section>
   );
 }
 

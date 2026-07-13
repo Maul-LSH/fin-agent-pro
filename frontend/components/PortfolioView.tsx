@@ -212,16 +212,8 @@ export function PortfolioView() {
     setInputFocused(false);
   };
 
-  const handleBlankMouseDown = (event: React.MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("input, button, a, textarea, select, [role='button']")) return;
-    if (workspaceActive) {
-      backToIntro();
-    }
-  };
-
   return (
-    <section className="relative" onMouseDownCapture={handleBlankMouseDown}>
+    <section className="relative">
       <motion.div
         animate={{
           opacity: workspaceActive ? 0.2 : 1,
@@ -490,7 +482,9 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
   const level = data.weighted_risk_level || "low";
   const levelStyle = {
     low: "from-emerald-500 to-green-600",
+    medium_low: "from-sky-500 to-blue-600",
     medium: "from-amber-500 to-orange-600",
+    medium_high: "from-orange-500 to-rose-600",
     high: "from-rose-500 to-red-600",
   }[level];
 
@@ -519,11 +513,7 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
               {t("portfolioWeightedRisk")}
             </div>
             <div className="text-base font-semibold mt-2 capitalize">
-              {level === "high"
-                ? t("riskHigh")
-                : level === "medium"
-                  ? t("riskMedium")
-                  : t("riskLow")}
+              {t(`riskLevel_${level}`)}
             </div>
           </div>
           <div className="md:col-span-2">
@@ -744,8 +734,12 @@ function DiagnosisResult({ data }: { data: PortfolioDiagnosis }) {
             const dotColor =
               h.risk_level === "high"
                 ? "bg-rose-500"
+                : h.risk_level === "medium_high"
+                ? "bg-orange-500"
                 : h.risk_level === "medium"
                 ? "bg-amber-500"
+                : h.risk_level === "medium_low"
+                ? "bg-sky-500"
                 : "bg-emerald-500";
             return (
               <div

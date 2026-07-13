@@ -154,7 +154,11 @@ def diagnose_portfolio(holdings: list[dict]) -> dict:
         weighted_score = weighted_risk / valid_weight
         result["weighted_risk_score"] = int(weighted_score)
         result["weighted_risk_level"] = (
-            "high" if weighted_score >= 70 else "medium" if weighted_score >= 40 else "low"
+            "high" if weighted_score >= 81
+            else "medium_high" if weighted_score >= 61
+            else "medium" if weighted_score >= 41
+            else "medium_low" if weighted_score >= 21
+            else "low"
         )
 
     # ── 行业集中度 ──
@@ -224,8 +228,12 @@ def _generate_portfolio_summary(result: dict) -> str:
     if score is not None:
         if level == "high":
             parts.append(f"⚠️ Portfolio risk is HIGH ({score}/100)")
+        elif level == "medium_high":
+            parts.append(f"⚠️ Portfolio risk is MEDIUM-HIGH ({score}/100)")
         elif level == "medium":
             parts.append(f"⚡ Portfolio risk is MEDIUM ({score}/100)")
+        elif level == "medium_low":
+            parts.append(f"✅ Portfolio risk is MEDIUM-LOW ({score}/100)")
         else:
             parts.append(f"✅ Portfolio risk is LOW ({score}/100)")
 

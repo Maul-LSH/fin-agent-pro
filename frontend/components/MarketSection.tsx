@@ -126,6 +126,11 @@ export function MarketSection({ market }: Props) {
     indices.length > 0 &&
     indices.every((i) => i.price === null);
   const showAkShareBanner = dataUnavailable && (market === "cn" || market === "hk");
+  const showCnSectorBanner =
+    market === "cn" &&
+    !showAkShareBanner &&
+    ((!sectorsLoading && sectors.length === 0) ||
+      (!attentionLoading && attention.length === 0));
 
   // Currency prefix per market
   const currencyPrefix =
@@ -181,6 +186,7 @@ export function MarketSection({ market }: Props) {
   return (
     <div className="space-y-24">
       {showAkShareBanner && <DataUnavailableBanner />}
+      {showCnSectorBanner && <SectorDataUnavailableBanner />}
 
       <MarketOverview
         data={indices}
@@ -327,6 +333,28 @@ function DataUnavailableBanner() {
         </p>
         <p className="text-[13px] text-amber-700 dark:text-amber-300 mt-1 leading-relaxed">
           {t("dataUnavailableBody")}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function SectorDataUnavailableBanner() {
+  const t = useT();
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4 flex items-start gap-3"
+    >
+      <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+      <div>
+        <p className="text-[14px] font-medium text-blue-950 dark:text-blue-100">
+          {t("sectorDataUnavailableTitle")}
+        </p>
+        <p className="text-[13px] text-blue-700 dark:text-blue-300 mt-1 leading-relaxed">
+          {t("sectorDataUnavailableBody")}
         </p>
       </div>
     </motion.div>

@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from .utils import retry, safe_round, cached_fetch, persistent_cached_fetch
-from .sectors import US_INDUSTRY_ETFS, US_SIZE_ETFS
+from .sectors import US_INDUSTRY_ETFS, US_SIZE_ETFS, get_cn_industry_sectors
 
 
 QUOTE_TTL = 30 * 60
@@ -156,7 +156,7 @@ def get_cn_sector_attention() -> list:
                 ttl=QUOTE_TTL,
             )
             if df is None or df.empty:
-                return None
+                df = None
 
             flow_df = cached_fetch(
                 "ak.cn.industry_fund_flow",
@@ -169,16 +169,43 @@ def get_cn_sector_attention() -> list:
                 ttl=QUOTE_TTL,
             )
 
-            df = df.sort_values("涨跌幅", ascending=False).head(15)
+            if df is None and (flow_df is None or flow_df.empty):
+                fallback = get_cn_industry_sectors(top_n=15)
+                for sector in fallback:
+                    change = sector.get("change_pct") or 0
+                    inflow = abs(sector.get("main_inflow_yi") or 0)
+                    item = {
+                        **sector,
+                        "turnover": None,
+                        "attention_score": safe_round(max(inflow, abs(change), 0.1), 2),
+                        "volatility_score": safe_round(abs(change), 2),
+                    }
+                    results.append(item)
+                _assign_quadrants(results)
+                return results or None
+
+            if df is None or df.empty:
+                df = flow_df
+
+            sort_col = next((c for c in ["涨跌幅", "今日涨跌幅", "涨跌幅(%)", "涨幅"] if c in df.columns), None)
+            if sort_col:
+                df = df.assign(_sort_change=df[sort_col].map(_to_float))
+                df = df.sort_values("_sort_change", ascending=False)
+            df = df.head(15)
 
             for _, row in df.iterrows():
-                name = row.get("板块名称")
+                name = _first_existing(row, ["板块名称", "名称", "行业名称"])
+                if not name:
+                    continue
+                change = _to_float(_first_existing(row, ["涨跌幅", "今日涨跌幅", "涨跌幅(%)", "涨幅"]))
+                turnover = _to_float(_first_existing(row, ["换手率", "换手率%", "成交额占比"]))
+                inflow = _to_float(_first_existing(row, ["今日主力净流入-净额", "主力净流入-净额", "净流入"]))
                 item = {
                     "label": name,
-                    "code": row.get("板块代码"),
-                    "price": safe_round(row.get("最新价")),
-                    "change_pct": safe_round(row.get("涨跌幅"), 2),
-                    "turnover": safe_round(row.get("换手率"), 2),
+                    "code": _first_existing(row, ["板块代码", "代码", "行业代码"]),
+                    "price": safe_round(_to_float(_first_existing(row, ["最新价", "最新", "收盘", "收盘价"]))),
+                    "change_pct": safe_round(change, 2),
+                    "turnover": safe_round(turnover, 2),
                     "main_inflow_yi": None,
                     "source": "akshare",
                 }
@@ -189,14 +216,17 @@ def get_cn_sector_attention() -> list:
                         if not matched.empty:
                             for col in ["今日主力净流入-净额", "主力净流入-净额"]:
                                 if col in matched.columns:
-                                    val = matched.iloc[0][col]
+                                    val = _to_float(matched.iloc[0][col])
                                     if val is not None:
-                                        item["main_inflow_yi"] = safe_round(float(val) / 1e8, 2)
+                                        item["main_inflow_yi"] = safe_round(val / 1e8, 2)
                                     break
                     except Exception:
                         pass
+                elif inflow is not None:
+                    item["main_inflow_yi"] = safe_round(inflow / 1e8, 2)
 
-                item["attention_score"] = item["turnover"]
+                inflow_attention = abs(item["main_inflow_yi"] or 0)
+                item["attention_score"] = item["turnover"] if item["turnover"] is not None else safe_round(max(inflow_attention, abs(item["change_pct"] or 0), 0.1), 2)
                 item["volatility_score"] = safe_round(abs(item["change_pct"]) if item["change_pct"] else 0, 2)
 
                 results.append(item)
@@ -213,3 +243,23 @@ def get_cn_sector_attention() -> list:
         ttl=QUOTE_TTL,
         stale_ttl=STALE_TTL,
     ) or []
+
+
+def _first_existing(row, columns: list[str]):
+    for col in columns:
+        if col in row and row.get(col) is not None:
+            return row.get(col)
+    return None
+
+
+def _to_float(value):
+    try:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.replace(",", "").replace("%", "").strip()
+            if value in {"", "-", "--", "nan", "None"}:
+                return None
+        return float(value)
+    except Exception:
+        return None

@@ -14,6 +14,8 @@ const api = axios.create({
   timeout: 90000, // 90 秒：AI 分析 + A 股数据拉取可能较慢
 });
 
+export type RiskLevel = "low" | "medium_low" | "medium" | "medium_high" | "high";
+
 // ─────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────
@@ -55,9 +57,29 @@ export interface Holding {
 
 export interface RiskAssessment {
   overall_score: number | null;
-  risk_level: "low" | "medium" | "high" | null;
+  risk_level: RiskLevel | null;
   summary: string;
-  altman_z?: { score: number; interpretation: string; risk_level: string } | null;
+  altman_z?: {
+    score: number;
+    interpretation: string;
+    risk_level: string;
+    model?: string;
+    model_name?: string;
+    applicability?: string;
+    distress_threshold?: number;
+    safe_threshold?: number;
+  } | null;
+  industry_profile?: {
+    type: string;
+    confidence: number;
+    sector?: string | null;
+    industry?: string | null;
+    signals: string[];
+    recommended_model: string;
+    altman_applicable: boolean;
+    altman_variant?: string | null;
+    note: string;
+  } | null;
   beneish_m?: { score: number; interpretation: string; risk_level: string } | null;
   cash_quality?: {
     ratio: number | null;
@@ -84,6 +106,31 @@ export interface RiskAssessment {
     title: string;
     description: string;
     metric?: string | number;
+  }>;
+  model_confidence?: {
+    level: "low" | "medium" | "high";
+    score: number;
+    reasons: string[];
+  } | null;
+  risk_drivers?: Array<{
+    title: string;
+    description: string;
+    severity: "high" | "medium" | "low";
+    metric?: string | number | null;
+  }>;
+  mitigating_factors?: Array<{
+    title: string;
+    description: string;
+    metric?: string | number | null;
+  }>;
+  stress_tests?: Array<{
+    id: string;
+    title: string;
+    base_score: number;
+    stressed_score: number;
+    risk_level: RiskLevel;
+    delta: number;
+    summary: string;
   }>;
   risk_scenarios?: Array<{
     id: string;
@@ -117,6 +164,12 @@ export interface RiskAssessment {
 export interface AnalyzeResponse {
   status: "ok" | "no_company";
   message?: string;
+  requested_period?: string;
+  resolved_period?: string;
+  actual_period_used?: string | null;
+  period_matched?: boolean;
+  data_source?: string | null;
+  is_stale?: boolean;
   intent?: {
     company_name: string;
     ticker: string;
@@ -128,6 +181,7 @@ export interface AnalyzeResponse {
   financial_data?: Record<string, unknown>;
   risk?: RiskAssessment;
   analysis?: string;
+  analysis_error?: string | null;
 }
 
 // ─────────────────────────────────────────
@@ -250,6 +304,7 @@ export const apiClient = {
   compare: async (params: {
     tickers: string[];
     period?: string;
+    lang: string;
   }): Promise<CompareResponse> => {
     const { data } = await api.post("/api/compare", params);
     return data;
@@ -258,6 +313,11 @@ export const apiClient = {
   // DCF 估值
   dcf: async (params: DCFRequest): Promise<DCFResult> => {
     const { data } = await api.post("/api/dcf", params);
+    return data;
+  },
+
+  resolveSymbol: async (query: string): Promise<SymbolResolveResult> => {
+    const { data } = await api.post("/api/symbol/resolve", { query });
     return data;
   },
 
@@ -270,6 +330,16 @@ export const apiClient = {
   // 敏感性分析
   dcfSensitivity: async (params: DCFRequest): Promise<SensitivityResult> => {
     const { data } = await api.post("/api/dcf/sensitivity", params);
+    return data;
+  },
+
+  driverValuationDefaults: async (ticker: string): Promise<DriverValuationDefaults> => {
+    const { data } = await api.post("/api/valuation/drivers/defaults", { ticker });
+    return data;
+  },
+
+  driverValuation: async (params: DriverValuationRequest): Promise<DriverValuationResult> => {
+    const { data } = await api.post("/api/valuation/drivers", params);
     return data;
   },
 
@@ -295,7 +365,7 @@ export interface PortfolioHolding {
 
 export interface PortfolioDiagnosis {
   weighted_risk_score: number | null;
-  weighted_risk_level: "low" | "medium" | "high" | null;
+  weighted_risk_level: RiskLevel | null;
   summary: string;
   sector_concentration: {
     sector: string;
@@ -323,7 +393,7 @@ export interface PortfolioDiagnosis {
     market: string;
     sector: string;
     risk_score: number | null;
-    risk_level: "low" | "medium" | "high" | null;
+    risk_level: RiskLevel | null;
   }[];
   errors: string[];
 }
@@ -353,6 +423,66 @@ export interface DCFRequest {
   forecast_years?: number;
 }
 
+export type DriverAssumptions = Record<string, Record<string, number>>;
+
+export interface DriverValuationDefaults {
+  ticker: string;
+  template: string;
+  currency: string;
+  assumptions: DriverAssumptions;
+  supported: boolean;
+  error?: string;
+}
+
+export interface DriverValuationRequest {
+  ticker: string;
+  assumptions: DriverAssumptions;
+  shares_outstanding_b?: number | null;
+  net_debt_b?: number | null;
+  current_price?: number | null;
+}
+
+export interface DriverValuationResult {
+  ticker: string;
+  supported: boolean;
+  template?: string;
+  assumptions?: DriverAssumptions;
+  segments?: {
+    key: string;
+    label: string;
+    revenue_b: number | null;
+    profit_b: number | null;
+    value_b: number | null;
+    method: string;
+  }[];
+  enterprise_value_b?: number | null;
+  equity_value_b?: number | null;
+  value_per_share?: number | null;
+  shares_outstanding_b?: number | null;
+  net_debt_b?: number | null;
+  market_cap_b?: number | null;
+  market_gap_b?: number | null;
+  current_price?: number | null;
+  explanation?: string;
+  error?: string;
+}
+
+export interface SymbolCandidate {
+  symbol: string;
+  name: string;
+  exchange: string | null;
+  market: "us" | "cn" | "hk";
+  source: string;
+  confidence: number;
+}
+
+export interface SymbolResolveResult {
+  query: string;
+  resolved: SymbolCandidate | null;
+  candidates: SymbolCandidate[];
+  error: string | null;
+}
+
 export interface DCFResult {
   ticker: string;
   current_fcf: number | null;
@@ -371,7 +501,9 @@ export interface DCFResult {
   net_debt: number | null;
   terminal_value_pct: number | null;
   implied_growth_rate: number | null;
+  market_implied_assumptions: MarketImpliedAssumption[];
   valuation_context: ValuationContext | null;
+  framework: ValuationFramework | null;
   wacc_breakdown: WaccBreakdown | null;
   warning: string | null;
   assumptions: {
@@ -382,6 +514,52 @@ export interface DCFResult {
     stage1_years: number;
   };
   error: string | null;
+}
+
+export interface MarketImpliedAssumption {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: "percent" | "currency_billion" | string;
+  status: "reasonable" | "stretched" | "extreme" | "unknown" | string;
+  baseline: number | null;
+  capped?: boolean;
+  explanation: string;
+}
+
+export interface ValuationFramework {
+  type: string;
+  label: string;
+  description: string;
+  confidence: number;
+  sector: string | null;
+  industry: string | null;
+  recommended_methods: {
+    key: string;
+    label: string;
+    role: "primary" | "cross-check" | "diagnostic" | "supplemental" | string;
+  }[];
+  drivers: {
+    category: string;
+    label: string;
+    inputs: string[];
+    source: string;
+  }[];
+  driver_template: {
+    label: string;
+    segments: {
+      name: string;
+      method: string;
+      drivers: string[];
+      outputs: string[];
+    }[];
+    next_steps: string[];
+  } | null;
+  market_implied_questions: {
+    driver: string;
+    question: string;
+  }[];
+  principle: string;
 }
 
 export interface ValuationContext {
